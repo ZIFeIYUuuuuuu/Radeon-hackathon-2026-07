@@ -1,0 +1,5 @@
+FROM qwen3:8b
+ADAPTER /workspace/claimcourt-models/claimcourt-qwen3-8b-lora/adapter_model.safetensors
+PARAMETER temperature 0.1
+PARAMETER num_ctx 4096
+SYSTEM You are ClaimCourt Router. Return JSON only. Select evidence_court, file_locator, or sensitive_record_scan. Never reveal raw credential values.
