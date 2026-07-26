@@ -2,7 +2,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from core import LocalRetriever, discover_workspace, markdown_brief, route_workspace_request, run_court, scan_sensitive_paths
+from core import LocalRetriever, discover_workspace, infer_intent, markdown_brief, route_workspace_request, run_court, scan_sensitive_paths
 
 
 class ClaimCourtTests(unittest.TestCase):
@@ -56,6 +56,22 @@ class ClaimCourtTests(unittest.TestCase):
         self.assertEqual("file_locator", route_workspace_request("Find the renewal presentation deck"))
         self.assertEqual("sensitive_record_scan", route_workspace_request("Where is my private key?"))
         self.assertEqual("evidence_court", route_workspace_request("Did the vendor approve the delay?"))
+
+    def test_vague_request_becomes_transparent_intent_plan(self):
+        plan = infer_intent("I wrote a PPT about customer delay and Q4 delivery risk, find it")
+        self.assertEqual("locate_artifact", plan.intent)
+        self.assertIn(".pptx", plan.artifact_types)
+        self.assertIn("delay", plan.topics)
+        self.assertIn("risk", plan.topics)
+        self.assertIn("Q4", plan.time_hints)
+        self.assertIn("slipped", plan.expanded_terms)
+
+    def test_file_locator_groups_and_explains_semantic_matches(self):
+        matches = self.retriever.locate_files("Find the presentation about customer delay and Q4 delivery risk")
+        self.assertTrue(matches)
+        self.assertTrue(matches[0].evidence)
+        self.assertTrue(matches[0].reasons)
+        self.assertTrue(any("semantic" in reason for reason in matches[0].reasons))
 
     def test_pptx_index_preserves_slide_locator(self):
         from pptx import Presentation

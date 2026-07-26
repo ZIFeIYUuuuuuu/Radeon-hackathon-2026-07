@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from email import policy
 from email.parser import BytesParser
@@ -29,6 +29,37 @@ class Evidence:
     source_sha256: str = ""
     evidence_sha256: str = ""
     source_path: str = ""
+    match_reasons: list[str] = field(default_factory=list)
+    file_score: float = 0.0
+    file_family: str = ""
+
+
+@dataclass(frozen=True)
+class IntentPlan:
+    """A transparent, local search plan derived from a vague request."""
+
+    intent: str
+    artifact_types: tuple[str, ...]
+    topics: tuple[str, ...]
+    entities: tuple[str, ...]
+    time_hints: tuple[str, ...]
+    expanded_terms: tuple[str, ...]
+    search_scope: tuple[str, ...]
+    confidence: float
+
+
+@dataclass(frozen=True)
+class FileMatch:
+    """File-level result with reasons; excerpts remain citation-addressable."""
+
+    source: str
+    source_path: str
+    file_family: str
+    score: float
+    confidence: float
+    reasons: tuple[str, ...]
+    evidence: tuple[Evidence, ...]
+    duplicate_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -120,6 +151,85 @@ SENSITIVE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 SUPPORTED_SUFFIXES = frozenset({".pdf", ".docx", ".pptx", ".txt", ".md", ".markdown", ".eml"})
 
 
+_ARTIFACT_ALIASES: dict[str, tuple[str, ...]] = {
+    "presentation": (".pptx", ".pdf"),
+    "ppt": (".pptx", ".pdf"),
+    "slides": (".pptx", ".pdf"),
+    "deck": (".pptx", ".pdf"),
+    "contract": (".pdf", ".docx", ".txt", ".md"),
+    "email": (".eml",),
+    "meeting": (".md", ".docx", ".eml", ".txt"),
+    "document": tuple(sorted(SUPPORTED_SUFFIXES)),
+}
+
+_TERM_EXPANSIONS: dict[str, tuple[str, ...]] = {
+    "delay": ("delay", "delayed", "延期", "slip", "slipped", "reschedule", "schedule"),
+    "risk": ("risk", "risks", "危机", "风险", "exposure", "issue"),
+    "delivery": ("delivery", "deliver", "交付", "shipment", "milestone", "timeline"),
+    "reliability": ("reliability", "uptime", "availability", "SLA", "service level", "可靠性"),
+    "approval": ("approve", "approved", "approval", "sign-off", "同意", "批准"),
+    "secret": ("private key", "API key", "token", "credential", "secret"),
+}
+
+
+def _unique(values: Iterable[str]) -> tuple[str, ...]:
+    result: list[str] = []
+    for value in values:
+        normalized = value.strip()
+        if normalized and normalized.lower() not in {item.lower() for item in result}:
+            result.append(normalized)
+    return tuple(result)
+
+
+def infer_intent(query: str) -> IntentPlan:
+    """Convert an imprecise request into an inspectable local search plan.
+
+    This deterministic layer is deliberately usable without a hosted model. A local
+    Qwen router can later replace or enrich it, but the emitted plan remains the
+    audit boundary for retrieval.
+    """
+
+    normalized = query.lower()
+    artifact_types: list[str] = []
+    for alias, suffixes in _ARTIFACT_ALIASES.items():
+        if alias in normalized:
+            artifact_types.extend(suffixes)
+    if not artifact_types:
+        artifact_types.extend(_ARTIFACT_ALIASES["document"])
+    topics: list[str] = []
+    expanded: list[str] = []
+    for seed, terms in _TERM_EXPANSIONS.items():
+        if seed in normalized or any(term.lower() in normalized for term in terms):
+            topics.append(seed)
+            expanded.extend(terms)
+    year_hints = re.findall(r"\b20\d{2}\b|\bQ[1-4]\b", query, flags=re.IGNORECASE)
+    time_hints = list(year_hints)
+    if any(word in normalized for word in ("before", "earlier", "old", "previous", "以前", "之前", "旧")):
+        time_hints.append("historical")
+    entities = re.findall(r"\b[A-Z][A-Za-z0-9_-]{2,}\b", query)
+    intent = "locate_artifact" if any(word in normalized for word in ("find", "locate", "where is", "written", "找", "哪份", "找不到", "ppt", "presentation")) else "evidence_question"
+    if any(term in normalized for term in ("private key", "api key", "token", "credential", "secret", "password", "私钥", "密钥")):
+        intent = "sensitive_record_scan"
+    search_scope = ("file_name", "title", "full_text", "related_documents") if intent == "locate_artifact" else ("full_text", "page_or_slide", "related_documents")
+    confidence = 0.55
+    if topics:
+        confidence += 0.12
+    if any(alias in normalized for alias in ("ppt", "presentation", "slide", "deck", "合同", "contract")):
+        confidence += 0.15
+    if year_hints:
+        confidence += 0.08
+    return IntentPlan(
+        intent=intent,
+        artifact_types=_unique(artifact_types),
+        topics=_unique(topics),
+        entities=_unique(entities),
+        time_hints=_unique(time_hints),
+        expanded_terms=_unique(expanded + re.findall(r"[A-Za-z0-9_.-]{3,}", query)),
+        search_scope=search_scope,
+        confidence=min(confidence, 0.99),
+    )
+
+
 def discover_workspace(folder: Path) -> list[Path]:
     """Return supported private files beneath a locally selected workspace."""
 
@@ -178,17 +288,24 @@ class LocalRetriever:
         self.archive: list[Evidence] = []
         self.last_changes: list[dict[str, str]] = []
         self.vectorizer: TfidfVectorizer | None = None
+        self.char_vectorizer: TfidfVectorizer | None = None
         self.matrix: Any = None
+        self.char_matrix: Any = None
+        self.last_intent: IntentPlan | None = None
         if self.index_file and self.index_file.exists():
             self._load_index()
 
     def _rebuild_matrix(self) -> None:
         if not self.evidence:
             self.vectorizer = None
+            self.char_vectorizer = None
             self.matrix = None
+            self.char_matrix = None
             return
         self.vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
         self.matrix = self.vectorizer.fit_transform(item.text for item in self.evidence)
+        self.char_vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), min_df=1, max_features=50000)
+        self.char_matrix = self.char_vectorizer.fit_transform(item.text for item in self.evidence)
 
     def _load_index(self) -> None:
         try:
@@ -310,14 +427,91 @@ class LocalRetriever:
         return scan_sensitive_paths(self.paths)
 
     def search(self, query: str, limit: int = 8) -> list[Evidence]:
-        if not self.vectorizer or self.matrix is None:
+        if not self.vectorizer or self.matrix is None or not self.char_vectorizer or self.char_matrix is None:
             raise ValueError("Index documents before asking a question.")
-        scores = cosine_similarity(self.vectorizer.transform([query]), self.matrix)[0]
+        plan = infer_intent(query)
+        self.last_intent = plan
+        expanded_query = " ".join((query, *plan.expanded_terms))
+        word_scores = cosine_similarity(self.vectorizer.transform([expanded_query]), self.matrix)[0]
+        char_scores = cosine_similarity(self.char_vectorizer.transform([expanded_query]), self.char_matrix)[0]
+        scores = 0.72 * word_scores + 0.28 * char_scores
         results: list[Evidence] = []
         for index in scores.argsort()[::-1][:limit]:
             evidence = self.evidence[int(index)]
-            results.append(Evidence(**{**asdict(evidence), "score": round(float(scores[index]), 3)}))
+            reasons = self._match_reasons(evidence, plan, float(scores[index]))
+            results.append(Evidence(**{**asdict(evidence), "score": round(float(scores[index]), 3), "file_score": round(float(scores[index]), 3), "match_reasons": reasons, "file_family": self._file_family(evidence.source)}))
         return results
+
+    @staticmethod
+    def _file_family(source: str) -> str:
+        stem = Path(source).stem.lower()
+        stem = re.sub(r"(?:[_ -](?:v?\d+|final|draft|signed|copy|最新版|最终版))+$", "", stem)
+        return re.sub(r"[^a-z0-9一-龥]+", "-", stem).strip("-") or stem
+
+    @staticmethod
+    def _match_reasons(item: Evidence, plan: IntentPlan, score: float) -> list[str]:
+        reasons = [f"semantic text match {score:.2f}"]
+        suffix = Path(item.source).suffix.lower()
+        if suffix in plan.artifact_types:
+            reasons.append(f"file type {suffix} matches intent")
+        lowered = f"{item.source} {item.text}".lower()
+        stopwords = {"the", "and", "for", "with", "about", "find", "wrote", "this", "that", "from", "where"}
+        matched = [term for term in plan.expanded_terms if len(term) >= 3 and term.lower() not in stopwords and term.lower() in lowered]
+        if matched:
+            reasons.append("concepts: " + ", ".join(matched[:5]))
+        if plan.time_hints and any(hint.lower() in lowered for hint in plan.time_hints):
+            reasons.append("time hint appears in source")
+        if item.locator.startswith("slide"):
+            reasons.append("slide-level evidence")
+        elif item.locator.startswith("page"):
+            reasons.append("page-level evidence")
+        return reasons
+
+    def locate_files(self, query: str, limit: int = 8, evidence_per_file: int = 2) -> list[FileMatch]:
+        """Find file families for vague requests, retaining evidence and reasons."""
+
+        if not self.vectorizer or self.matrix is None or not self.char_vectorizer or self.char_matrix is None:
+            raise ValueError("Index documents before asking a question.")
+        plan = infer_intent(query)
+        self.last_intent = plan
+        expanded_query = " ".join((query, *plan.expanded_terms))
+        word_scores = cosine_similarity(self.vectorizer.transform([expanded_query]), self.matrix)[0]
+        char_scores = cosine_similarity(self.char_vectorizer.transform([expanded_query]), self.char_matrix)[0]
+        scores = 0.72 * word_scores + 0.28 * char_scores
+        grouped: dict[str, list[tuple[Evidence, float]]] = {}
+        for index, raw_score in enumerate(scores):
+            item = self.evidence[index]
+            suffix = Path(item.source).suffix.lower()
+            type_bonus = 0.12 if suffix in plan.artifact_types else 0.0
+            filename_text = item.source.lower()
+            filename_bonus = 0.10 if any(term.lower() in filename_text for term in plan.expanded_terms if len(term) >= 4) else 0.0
+            score = min(1.0, float(raw_score) * 0.78 + type_bonus + filename_bonus)
+            grouped.setdefault(item.source_path or item.source, []).append((item, score))
+        ranked: list[FileMatch] = []
+        families: dict[str, list[tuple[str, float]]] = {}
+        for source_path, values in grouped.items():
+            values.sort(key=lambda pair: pair[1], reverse=True)
+            best_score = values[0][1]
+            source = values[0][0].source
+            family = self._file_family(source)
+            families.setdefault(family, []).append((source_path, best_score))
+        for family, members in families.items():
+            members.sort(key=lambda pair: pair[1], reverse=True)
+            primary_path, best_score = members[0]
+            values = grouped[primary_path]
+            selected: list[Evidence] = []
+            reason_set: list[str] = []
+            for item, raw_score in values[:evidence_per_file]:
+                reasons = self._match_reasons(item, plan, raw_score)
+                selected.append(Evidence(**{**asdict(item), "score": round(raw_score, 3), "file_score": round(best_score, 3), "match_reasons": reasons, "file_family": family}))
+                for reason in reasons:
+                    if reason not in reason_set:
+                        reason_set.append(reason)
+            if len(members) > 1:
+                reason_set.append(f"{len(members) - 1} similar copy/version(s) grouped")
+            ranked.append(FileMatch(source=selected[0].source, source_path=primary_path, file_family=family, score=round(best_score, 3), confidence=round(min(0.99, 0.45 + best_score * 0.5), 2), reasons=tuple(reason_set), evidence=tuple(selected), duplicate_paths=tuple(path for path, _ in members[1:])))
+        ranked.sort(key=lambda match: match.score, reverse=True)
+        return ranked[:limit]
 
 
 def route_workspace_request(query: str) -> str:
@@ -326,7 +520,7 @@ def route_workspace_request(query: str) -> str:
     normalized = query.lower()
     if any(term in normalized for term in ("private key", "api key", "token", "credential", "secret", "password")):
         return "sensitive_record_scan"
-    if any(term in normalized for term in ("ppt", "presentation", "slide", "deck", "find file", "locate", "where is")):
+    if infer_intent(query).intent == "locate_artifact":
         return "file_locator"
     return "evidence_court"
 

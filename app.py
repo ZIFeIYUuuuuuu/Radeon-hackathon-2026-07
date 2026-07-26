@@ -5,6 +5,7 @@ from pathlib import Path
 import streamlit as st
 
 from core import (
+    FileMatch,
     LocalOllama,
     LocalRetriever,
     LocalVLLM,
@@ -34,6 +35,8 @@ if "sensitive_findings" not in st.session_state:
     st.session_state.sensitive_findings = []
 if "file_matches" not in st.session_state:
     st.session_state.file_matches = []
+if "intent_plan" not in st.session_state:
+    st.session_state.intent_plan = None
 
 
 def index_demo() -> None:
@@ -125,7 +128,8 @@ if st.button("Run private workspace request", type="primary", use_container_widt
             st.session_state.case = None
             st.success("Completed local redacted sensitive-record scan.")
         elif route == "file_locator":
-            st.session_state.file_matches = st.session_state.retriever.search(claim)
+            st.session_state.file_matches = st.session_state.retriever.locate_files(claim)
+            st.session_state.intent_plan = st.session_state.retriever.last_intent
             st.session_state.sensitive_findings = []
             st.session_state.case = None
             st.success("Completed local file-location search.")
@@ -182,19 +186,47 @@ if st.session_state.retriever.history:
 matches = st.session_state.file_matches
 if matches:
     st.subheader("Local file matches")
-    st.dataframe(
-        [
-            {
-                "Source": item.source,
-                "Location": item.locator,
-                "Relevance": item.score,
-                "Excerpt": item.text[:220],
-            }
-            for item in matches
-        ],
-        use_container_width=True,
-        hide_index=True,
-    )
+    plan = st.session_state.intent_plan
+    if plan:
+        st.caption(
+            f"Intent: **{plan.intent}** · types: {', '.join(plan.artifact_types)} · "
+            f"topics: {', '.join(plan.topics) or 'general'} · confidence: {plan.confidence:.0%}"
+        )
+        with st.expander("Inspect local search plan"):
+            st.json({
+                "intent": plan.intent,
+                "artifact_types": list(plan.artifact_types),
+                "topics": list(plan.topics),
+                "entities": list(plan.entities),
+                "time_hints": list(plan.time_hints),
+                "expanded_terms": list(plan.expanded_terms),
+                "search_scope": list(plan.search_scope),
+                "confidence": plan.confidence,
+            })
+    for match in matches:
+        if isinstance(match, FileMatch):
+            with st.container(border=True):
+                st.markdown(f"**{match.source}** · confidence {match.confidence:.0%} · score {match.score:.3f}")
+                st.caption(f"File family: {match.file_family}")
+                st.markdown("**Why this matched**")
+                for reason in match.reasons:
+                    st.write(f"- {reason}")
+                if match.duplicate_paths:
+                    st.caption(f"Grouped similar copies/versions: {len(match.duplicate_paths)}")
+                for item in match.evidence:
+                    with st.expander(f"[{item.citation}] {item.locator}"):
+                        st.write(item.text)
+        else:
+            st.dataframe(
+                [{
+                    "Source": item.source,
+                    "Location": item.locator,
+                    "Relevance": item.score,
+                    "Excerpt": item.text[:220],
+                } for item in matches],
+                use_container_width=True,
+                hide_index=True,
+            )
 
 case = st.session_state.case
 if case:

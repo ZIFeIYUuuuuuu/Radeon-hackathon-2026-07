@@ -104,6 +104,14 @@ The final submission opens directly into the **Case Room**, not a marketing land
 
 ## 7. Functional Requirements
 
+### FR-0: Semantic memory finder
+
+- The user may describe an artifact or fact imprecisely; exact filenames are not required.
+- A local intent planner emits the inferred intent, artifact types, topics, entities, time hints, expanded concepts, and search scope before retrieval.
+- File discovery combines semantic text relevance with file-name/type and locator signals; every result displays human-readable match reasons.
+- Similar copies and version-like files are grouped into a file family while distinct evidence excerpts remain visible.
+- The UI must show confidence and allow the user to inspect the search plan instead of presenting an opaque nearest-neighbor result.
+
 ### FR-1: Evidence intake
 
 - User can load the stable demo corpus in one command.
