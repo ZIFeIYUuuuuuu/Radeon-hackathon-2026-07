@@ -207,7 +207,7 @@ def infer_intent(query: str) -> IntentPlan:
     if any(word in normalized for word in ("before", "earlier", "old", "previous", "以前", "之前", "旧")):
         time_hints.append("historical")
     entities = re.findall(r"\b[A-Z][A-Za-z0-9_-]{2,}\b", query)
-    intent = "locate_artifact" if any(word in normalized for word in ("find", "locate", "where", "written", "找", "哪份", "文件", "ppt", "presentation")) else "evidence_question"
+    intent = "locate_artifact" if any(word in normalized for word in ("find", "locate", "where is", "written", "找", "哪份", "找不到", "ppt", "presentation")) else "evidence_question"
     if any(term in normalized for term in ("private key", "api key", "token", "credential", "secret", "password", "私钥", "密钥")):
         intent = "sensitive_record_scan"
     search_scope = ("file_name", "title", "full_text", "related_documents") if intent == "locate_artifact" else ("full_text", "page_or_slide", "related_documents")
