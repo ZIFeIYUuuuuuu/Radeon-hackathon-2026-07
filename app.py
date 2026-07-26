@@ -40,11 +40,12 @@ if "intent_plan" not in st.session_state:
 
 
 def index_demo() -> None:
-    st.session_state.retriever = LocalRetriever()
+    st.session_state.retriever = LocalRetriever(INDEX_FILE)
     count = st.session_state.retriever.index_paths(DEMO_DIR.glob("*"))
     st.session_state.indexed_count = count
     st.session_state.sensitive_findings = []
     st.session_state.file_matches = []
+    st.session_state.intent_plan = None
 
 
 st.title("ClaimCourt")
@@ -91,6 +92,7 @@ with st.sidebar:
         st.session_state.indexed_count = st.session_state.retriever.index_paths(saved, accumulate=True)
         st.session_state.sensitive_findings = []
         st.session_state.file_matches = []
+        st.session_state.intent_plan = None
         st.success(f"Indexed {st.session_state.indexed_count} local evidence chunks.")
     if st.button("Index local workspace", use_container_width=True):
         try:
@@ -99,6 +101,7 @@ with st.sidebar:
             st.session_state.indexed_count = st.session_state.retriever.index_paths(files, accumulate=True)
             st.session_state.sensitive_findings = []
             st.session_state.file_matches = []
+            st.session_state.intent_plan = None
             st.success(f"Indexed {len(files)} local files into {st.session_state.indexed_count} evidence chunks.")
         except ValueError as exc:
             st.error(str(exc))
