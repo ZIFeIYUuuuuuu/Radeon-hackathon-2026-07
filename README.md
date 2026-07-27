@@ -94,6 +94,12 @@ For semantic retrieval, run a local embedding model in Ollama and enable **Use l
 
 The embedding endpoint is http://localhost:11434 with model nomic-embed-text. This is optional; the app keeps a deterministic hybrid fallback when the embedding model is not loaded.
 
+On the Radeon Cloud deployment, the verified configuration uses vLLM's pooling runner:
+
+    vllm serve /workspace/models/bge-small-zh-v1.5 --runner pooling --host 0.0.0.0 --port 8001 --dtype bfloat16 --gpu-memory-utilization 0.12 --max-model-len 512
+
+Use http://localhost:8001/v1 and model /workspace/models/bge-small-zh-v1.5 in ClaimCourt. The endpoint exposes /v1/embeddings and returns 512-dimensional vectors.
+
 Start the interface, select **Ollama ROCm**, and use `http://localhost:11434` with model `qwen3:32b-q8_0`. The app uses Ollama's native streaming telemetry for first-token latency and output throughput.
 
 vLLM remains a supported fallback for the preinstalled Qwen3 8B model:

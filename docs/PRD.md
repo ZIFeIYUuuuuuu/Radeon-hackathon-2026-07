@@ -173,6 +173,7 @@ The final submission opens directly into the **Case Room**, not a marketing land
 - Target Radeon Cloud image: `ROCm vLLM-dev (Navi)`.
 - Dtype: BF16 on Radeon Pro W7900-class VRAM; supported AWQ/GPTQ only if needed and measured.
 - One model instance serves all three roles serially to keep VRAM use and behavior predictable.
+- Semantic retrieval may use a separate local BGE-small embedding runner on port 8001; the judge model and embedding model have independent endpoints and telemetry.
 
 ### Deployment requirement
 
