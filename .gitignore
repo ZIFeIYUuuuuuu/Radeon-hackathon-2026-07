@@ -5,4 +5,7 @@ data/uploads/
 data/exports/
 data/index/
 backups/
+models/
+championship_results*.json
+qwen3-download*.log
 .streamlit/secrets.toml

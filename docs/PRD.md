@@ -258,6 +258,21 @@ As a hackathon judge, I see proof that the substantive roles use a local Radeon/
 
 ## 12. Delivery Plan
 
+## 12A. Championship Acceptance Scenario
+
+The submission is not judged on a toy single-document question. The release demo uses one realistic synthetic private workspace containing contracts, email threads, meeting notes, presentations, approval logs, drafts, duplicate exports, unrelated noise, and a redacted test secret. The corpus is synthetic so no participant data leaves the machine, but its structure must resemble a real operations workspace.
+
+The judge-visible journey is:
+
+1. **Memory Finder:** the user says, "I wrote a presentation about the customer's delayed launch and Q4 risk; find it." ClaimCourt parses the intent, searches across file names, slides, mail, and notes, groups copies and versions, and explains why the final presentation is the best match.
+2. **Sensitive locator:** the user says, "I wrote a private key somewhere in the migration notes and cannot find it." ClaimCourt locates the file and line metadata, returns a fingerprint and redacted preview, and never displays the key material.
+3. **Evidence Court:** the user asks whether the vendor contractually committed to 99.9% uptime. ClaimCourt retrieves the agreement, sales email, conditional meeting target, and addendum versions; local GPU prosecution, defense, and judge calls produce a cited insufficient-evidence verdict and a contradiction timeline.
+4. **Approval gate:** the user reviews the evidence ledger, explicitly approves a local decision brief, and sees the generated report. No approval means no file write.
+
+The release gate is failed if any of these conditions occur: a remote model call, an uncited material claim, a full secret in output, a hidden fallback represented as GPU inference, a missing version distinction, or a report written without approval.
+
+Required recorded proof for this journey: embedding endpoint health and model ID, judge endpoint health and model ID, GPU/ROCm versions, VRAM usage, first-token latency, completion tokens/s, end-to-end latency, valid citation checks, and the 13+ test suite result.
+
 ### Milestone 1: Reliable GPU proof
 
 - Stage model files or restore cloud egress.
