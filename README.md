@@ -57,6 +57,20 @@ Click **Load stable demo case**, then ask:
 
 The included corpus intentionally produces `Insufficient Evidence`: sales language is marketing, meeting notes describe a conditional future target, and the agreement requires a signed SLA addendum.
 
+For the championship acceptance run, build the larger multi-file workspace and run its gate:
+
+    python scripts/build_championship_corpus.py
+    python scripts/championship_check.py --output championship_results.json
+
+The live release gate additionally requires the local embedding and judge endpoints:
+
+    python scripts/championship_check.py \
+      --embedding-endpoint http://localhost:8001/v1 \
+      --embedding-model /workspace/models/bge-small-zh-v1.5 \
+      --judge-endpoint http://localhost:8000/v1 \
+      --judge-model Qwen/Qwen3-8B \
+      --require-live-judge
+
 The app includes a deterministic local fallback so the complete UI and demo corpus can be reviewed before the GPU server is ready. For the competition demo, start the local ROCm service below; the court record then reports the active local runtime, judge first-token latency, and generated token throughput.
 
 ## Radeon Cloud / ROCm deployment
