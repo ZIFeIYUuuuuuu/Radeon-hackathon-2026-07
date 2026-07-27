@@ -6,6 +6,8 @@ https://github.com/ZIFeIYUuuuuuu/Radeon-hackathon-2026-07/tree/claimcourt
 
 The local machine backup is under `backups/cloud-2026-07-22/`. It contains the trained LoRA adapter, its metrics, and the persistent workspace index. Do not commit that directory; the adapter is intentionally kept outside GitHub because it is about 175 MB.
 
+The semantic retrieval model is kept outside GitHub at `C:\Users\Administrator\Desktop\AMD-HACKERSONG\models\bge-small-zh-v1.5\` (96,284,895 bytes total). The main weight file SHA-256 is `7C5FE667BBED05DC10E246E229B701AD266FE4D95AB946E9E5AA402056611B88`.
+
 ## New Radeon Cloud Instance
 
 Use a ROCm image, then run:
@@ -39,6 +41,17 @@ Start the UI:
 cd /workspace/claimcourt
 nohup /opt/venv/bin/streamlit run app.py --server.address 127.0.0.1 --server.port 8502 > /workspace/claimcourt-ui.log 2>&1 &
 ```
+
+To restore semantic retrieval, transfer the BGE-small directory to `/workspace/models/bge-small-zh-v1.5`, then start the local pooling endpoint:
+
+```bash
+nohup /opt/venv/bin/vllm serve /workspace/models/bge-small-zh-v1.5 \
+  --runner pooling --host 0.0.0.0 --port 8001 --dtype bfloat16 \
+  --gpu-memory-utilization 0.12 --max-model-len 512 \
+  > /workspace/embedding.log 2>&1 &
+```
+
+In the UI enable local semantic embeddings, use endpoint `http://localhost:8001/v1`, and model `/workspace/models/bge-small-zh-v1.5`. The endpoint must return HTTP 200 from `/v1/embeddings` before indexing the corpus.
 
 Verify recovery:
 
