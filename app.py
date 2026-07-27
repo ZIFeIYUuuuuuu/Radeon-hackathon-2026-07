@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import streamlit as st
@@ -83,11 +84,17 @@ with st.sidebar:
         embedding_runtime = st.selectbox("Embedding runtime", ["Ollama ROCm", "vLLM ROCm"])
         embedding_endpoint = st.text_input(
             "Embedding endpoint",
-            "http://localhost:11434" if embedding_runtime == "Ollama ROCm" else "http://localhost:8000/v1",
+            os.getenv(
+                "CLAIMCOURT_EMBEDDING_ENDPOINT",
+                "http://localhost:11434" if embedding_runtime == "Ollama ROCm" else "http://localhost:8001/v1",
+            ),
         )
         embedding_model = st.text_input(
             "Embedding model",
-            "nomic-embed-text" if embedding_runtime == "Ollama ROCm" else "BAAI/bge-m3",
+            os.getenv(
+                "CLAIMCOURT_EMBEDDING_MODEL",
+                "nomic-embed-text" if embedding_runtime == "Ollama ROCm" else "/workspace/models/bge-small-zh-v1.5",
+            ),
         )
         st.session_state.retriever.embedder = LocalEmbeddingClient(
             embedding_runtime,
