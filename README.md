@@ -1,8 +1,42 @@
-# ClaimCourt: A Private Local AI Evidence Court
+# ClaimCourt：私有本地 AI 证据法庭
 
-ClaimCourt turns private contracts, emails, meeting notes, and chat exports into a cited decision brief. Its controlled workflow retrieves local evidence, presents the strongest case on each side, reconstructs contradictions and a timeline, then produces a verdict that can cite only the retrieved packet.
+> 面向 AMD AI DevMaster Hackathon 2026 赛道二的冠军目标项目。
 
-It is designed for **AMD AI DevMaster Hackathon 2026, Track 2**. No remote closed model API is used. The model endpoint is a local Ollama ROCm or vLLM server running on an AMD Radeon GPU.
+ClaimCourt 将本地合同、邮件、会议纪要、聊天记录和演示文稿转换为**带引用的裁决、矛盾时间线和可审批决策简报**。所有文档、检索内容和模型推理都留在 Radeon Cloud 的 AMD Radeon GPU 上，不依赖远程闭源模型 API。
+
+## 项目做什么
+
+- 用户可以用模糊意图找回本地文件，例如“找出我写过的关于客户延期和 Q4 风险的 PPT”。
+- 用户可以在本地文件中定位私钥、Token 或凭证，但系统只显示文件位置、类型、指纹和脱敏预览，绝不显示秘密值。
+- 对合同、邮件和会议纪要执行检索、检方、辩方、法官三步受控工作流。
+- 输出 `supported`、`contradicted` 或 `insufficient_evidence` 裁决，并附证据引用、矛盾、时间线、缺失证据和下一步行动。
+- 只有用户明确批准后，系统才会在本地写入 Markdown 决策简报。
+
+## 已验证的 Radeon 配置
+
+- 法官模型：`Qwen3-8B`，vLLM + ROCm，BF16。
+- 语义模型：`BAAI/bge-small-zh-v1.5`，vLLM pooling runner，512 维向量。
+- 真实门禁结果：23 个文件、28 个文本块、语义检索激活、敏感信息脱敏、真实三角色裁决、禁止 fallback。
+- 实测性能：法官首 token 延迟约 `0.23s`，生成速度约 `25.7 tokens/s`。
+
+## 快速体验
+
+```bash
+python -m pip install -r requirements.txt
+streamlit run app.py --server.address 0.0.0.0 --server.port 8502
+```
+
+打开页面后选择 `vLLM ROCm`，模型填写 `Qwen3-8B`，点击“Load stable demo case”，再开启“Championship mode”。冠军演示问题：
+
+> Did the vendor contractually commit to 99.9% uptime?
+
+预期裁决为：没有找到签署的 99.9% SLA 承诺；销售措辞属于营销表达，会议记录是带条件的未来目标，下一步应请求签署 SLA 附录。
+
+## 英文比赛材料
+
+以下英文部分保留给评委、README 审核和官方 PR 使用。
+
+## English Submission Details
 
 ## What it demonstrates
 
