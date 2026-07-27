@@ -111,6 +111,8 @@ The final submission opens directly into the **Case Room**, not a marketing land
 - File discovery combines semantic text relevance with file-name/type and locator signals; every result displays human-readable match reasons.
 - Similar copies and version-like files are grouped into a file family while distinct evidence excerpts remain visible.
 - The UI must show confidence and allow the user to inspect the search plan instead of presenting an opaque nearest-neighbor result.
+- If a local Ollama or vLLM embedding endpoint is configured, embedding similarity is blended with lexical retrieval; endpoint failure must fall back to deterministic local retrieval.
+- Query plans and result identities are persisted locally so a case owner can inspect or replay prior searches without re-uploading evidence.
 
 ### FR-1: Evidence intake
 

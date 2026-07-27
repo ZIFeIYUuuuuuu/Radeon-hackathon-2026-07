@@ -18,6 +18,8 @@ It is designed for **AMD AI DevMaster Hackathon 2026, Track 2**. No remote close
 - **Specialized local router:** an optional Qwen3 8B LoRA adapter is trained locally on synthetic ClaimCourt routing, cited-verdict, and secret-redaction examples. It selects local tools; the Qwen3 32B Q8 model remains the final judge.
 - **Unified private request:** one request routes to evidence court, file location, or a redacted sensitive-record scan without sending workspace contents outside the instance.
 - **Semantic memory finder:** vague requests such as “find the PPT I wrote about customer delay and Q4 risk” are converted into a transparent local intent plan, expanded concepts, file-type constraints, hybrid relevance scores, and human-readable match reasons.
+- **Optional local embeddings:** when a loopback Ollama /api/embed or vLLM /v1/embeddings endpoint is configured, embedding similarity is blended with lexical retrieval; an unavailable endpoint falls back without sending data elsewhere.
+- **Query memory:** local query plans, result identities, confidence, and the embedding model used are persisted with the workspace index for replay and audit.
 - **File-family grouping:** similar copies and version-like names are grouped so a PDF export, draft, and final presentation do not appear as unrelated discoveries.
 - **Accumulating workspace memory:** the local index persists source hashes, current evidence, and prior-version excerpts across refreshes; changed files are marked and re-indexed instead of silently reusing stale evidence.
 
@@ -85,6 +87,12 @@ ollama run qwen3:32b-q8_0 "Return JSON only: {\"status\": \"ready\"}"
 ollama ps
 rocm-smi
 ```
+
+For semantic retrieval, run a local embedding model in Ollama and enable **Use local semantic embeddings** in the sidebar:
+
+    ollama pull nomic-embed-text
+
+The embedding endpoint is http://localhost:11434 with model nomic-embed-text. This is optional; the app keeps a deterministic hybrid fallback when the embedding model is not loaded.
 
 Start the interface, select **Ollama ROCm**, and use `http://localhost:11434` with model `qwen3:32b-q8_0`. The app uses Ollama's native streaming telemetry for first-token latency and output throughput.
 

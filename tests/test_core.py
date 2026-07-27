@@ -110,6 +110,40 @@ class ClaimCourtTests(unittest.TestCase):
             self.assertTrue(any(item["status"] == "changed" for item in reopened.history))
             self.assertEqual("first version", reopened.archived_versions()[0].text)
 
+    def test_local_embedding_and_query_history_are_optional_but_persistent(self):
+        class FakeEmbedder:
+            model = "fake-local-embed"
+
+            def embed(self, texts):
+                return [[float(len(text)), float(text.lower().count("q4")), float(text.lower().count("delay"))] for text in texts]
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            index_file = root / "workspace_index.json"
+            retriever = LocalRetriever(index_file, embedder=FakeEmbedder())
+            retriever.index_paths((Path(__file__).parent.parent / "demo_corpus").glob("*"))
+            matches = retriever.locate_files("find my Q4 delay presentation")
+            self.assertIsNotNone(retriever.embedding_matrix)
+            self.assertEqual("fake-local-embed", retriever.query_history[-1]["embedding_model"])
+            self.assertEqual("locate_artifact", retriever.query_history[-1]["intent"]["intent"])
+            reopened = LocalRetriever(index_file)
+            self.assertEqual(1, len(reopened.query_history))
+            self.assertEqual(matches[0].source, reopened.query_history[0]["results"][0]["source"])
+
+    def test_failed_local_embedding_endpoint_falls_back_to_hybrid_retrieval(self):
+        class FailingEmbedder:
+            model = "unavailable-local-embed"
+
+            def embed(self, texts):
+                raise ValueError("embedding service unavailable")
+
+        retriever = LocalRetriever(embedder=FailingEmbedder())
+        retriever.index_paths((Path(__file__).parent.parent / "demo_corpus").glob("*"))
+        matches = retriever.locate_files("find the Q4 delivery presentation")
+        self.assertTrue(matches)
+        self.assertIsNone(retriever.embedding_matrix)
+        self.assertIsNone(retriever.query_history[-1]["embedding_model"])
+
 
 if __name__ == "__main__":
     unittest.main()

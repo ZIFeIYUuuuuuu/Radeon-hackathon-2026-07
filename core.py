@@ -62,6 +62,40 @@ class FileMatch:
     duplicate_paths: tuple[str, ...] = ()
 
 
+class LocalEmbeddingClient:
+    """OpenAI-compatible or Ollama embedding client; all calls stay loopback/local."""
+
+    def __init__(self, runtime: str, base_url: str, model: str) -> None:
+        self.runtime = runtime
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        if self.runtime == "Ollama ROCm":
+            response = requests.post(
+                f"{self.base_url}/api/embed",
+                json={"model": self.model, "input": texts},
+                timeout=120,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            vectors = payload.get("embeddings", [])
+        else:
+            response = requests.post(
+                f"{self.base_url}/embeddings",
+                json={"model": self.model, "input": texts},
+                timeout=120,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            vectors = [item["embedding"] for item in payload.get("data", [])]
+        if not isinstance(vectors, list) or len(vectors) != len(texts):
+            raise ValueError("Local embedding runtime returned an invalid vector count.")
+        return [[float(value) for value in vector] for vector in vectors]
+
+
 @dataclass(frozen=True)
 class SensitiveFinding:
     """A redacted local-only record of a possible credential or private key."""
@@ -280,7 +314,7 @@ def extract_date(text: str) -> str | None:
 class LocalRetriever:
     """In-memory TF-IDF retrieval. Documents and embeddings stay on the host."""
 
-    def __init__(self, index_file: Path | None = None) -> None:
+    def __init__(self, index_file: Path | None = None, embedder: LocalEmbeddingClient | None = None) -> None:
         self.evidence: list[Evidence] = []
         self.paths: list[Path] = []
         self.index_file = index_file
@@ -291,6 +325,10 @@ class LocalRetriever:
         self.char_vectorizer: TfidfVectorizer | None = None
         self.matrix: Any = None
         self.char_matrix: Any = None
+        self.embedder = embedder
+        self.embedding_matrix: Any = None
+        self.embedding_model = ""
+        self.query_history: list[dict[str, Any]] = []
         self.last_intent: IntentPlan | None = None
         if self.index_file and self.index_file.exists():
             self._load_index()
@@ -313,6 +351,7 @@ class LocalRetriever:
             self.evidence = [Evidence(**item) for item in payload.get("evidence", [])]
             self.history = payload.get("history", [])
             self.archive = [Evidence(**item) for item in payload.get("archive", [])]
+            self.query_history = payload.get("query_history", [])[-100:]
             self.paths = [Path(path) for path in sorted({item.source_path for item in self.evidence if item.source_path})]
             self._rebuild_matrix()
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
@@ -329,6 +368,8 @@ class LocalRetriever:
             "evidence": [asdict(item) for item in self.evidence],
             "history": self.history[-500:],
             "archive": [asdict(item) for item in self.archive],
+            "query_history": self.query_history[-100:],
+            "embedding_model": self.embedding_model,
         }
         temporary = self.index_file.with_suffix(self.index_file.suffix + ".tmp")
         temporary.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
@@ -402,8 +443,61 @@ class LocalRetriever:
             raise ValueError("No readable text was found in the selected documents.")
         self.evidence = entries
         self._rebuild_matrix()
+        self._rebuild_embedding_matrix()
         self._persist_index()
         return len(entries)
+
+    def _rebuild_embedding_matrix(self) -> None:
+        self.embedding_matrix = None
+        if not self.embedder or not self.evidence:
+            return
+        try:
+            vectors = self.embedder.embed([item.text for item in self.evidence])
+            if vectors:
+                self.embedding_matrix = vectors
+                self.embedding_model = self.embedder.model
+        except (requests.RequestException, ValueError, KeyError, TypeError):
+            # Retrieval remains available through the deterministic local indexes.
+            self.embedding_matrix = None
+
+    def _semantic_scores(self, query: str) -> Any:
+        if not self.embedder or self.embedding_matrix is None:
+            return None
+        try:
+            query_vector = self.embedder.embed([query])
+            if not query_vector:
+                return None
+            return cosine_similarity(query_vector, self.embedding_matrix)[0]
+        except (requests.RequestException, ValueError, KeyError, TypeError):
+            return None
+
+    def _record_query(self, query: str, plan: IntentPlan, results: Iterable[Evidence | FileMatch]) -> None:
+        compact_results: list[dict[str, Any]] = []
+        for result in results:
+            if isinstance(result, FileMatch):
+                compact_results.append({
+                    "source": result.source,
+                    "source_path": result.source_path,
+                    "score": result.score,
+                    "confidence": result.confidence,
+                    "reasons": list(result.reasons),
+                })
+            else:
+                compact_results.append({
+                    "citation": result.citation,
+                    "source": result.source,
+                    "score": result.score,
+                })
+        self.query_history.append({
+            "query_id": f"Q-{len(self.query_history) + 1:04d}",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "query": query,
+            "intent": asdict(plan),
+            "results": compact_results,
+            "embedding_model": self.embedding_model or None,
+        })
+        self.query_history = self.query_history[-100:]
+        self._persist_index()
 
     def archived_versions(self, source_path: str | None = None) -> list[Evidence]:
         if source_path is None:
@@ -435,11 +529,15 @@ class LocalRetriever:
         word_scores = cosine_similarity(self.vectorizer.transform([expanded_query]), self.matrix)[0]
         char_scores = cosine_similarity(self.char_vectorizer.transform([expanded_query]), self.char_matrix)[0]
         scores = 0.72 * word_scores + 0.28 * char_scores
+        semantic_scores = self._semantic_scores(expanded_query)
+        if semantic_scores is not None and len(semantic_scores) == len(scores):
+            scores = 0.48 * scores + 0.52 * semantic_scores
         results: list[Evidence] = []
         for index in scores.argsort()[::-1][:limit]:
             evidence = self.evidence[int(index)]
             reasons = self._match_reasons(evidence, plan, float(scores[index]))
             results.append(Evidence(**{**asdict(evidence), "score": round(float(scores[index]), 3), "file_score": round(float(scores[index]), 3), "match_reasons": reasons, "file_family": self._file_family(evidence.source)}))
+        self._record_query(query, plan, results)
         return results
 
     @staticmethod
@@ -478,6 +576,9 @@ class LocalRetriever:
         word_scores = cosine_similarity(self.vectorizer.transform([expanded_query]), self.matrix)[0]
         char_scores = cosine_similarity(self.char_vectorizer.transform([expanded_query]), self.char_matrix)[0]
         scores = 0.72 * word_scores + 0.28 * char_scores
+        semantic_scores = self._semantic_scores(expanded_query)
+        if semantic_scores is not None and len(semantic_scores) == len(scores):
+            scores = 0.48 * scores + 0.52 * semantic_scores
         grouped: dict[str, list[tuple[Evidence, float]]] = {}
         for index, raw_score in enumerate(scores):
             item = self.evidence[index]
@@ -511,7 +612,9 @@ class LocalRetriever:
                 reason_set.append(f"{len(members) - 1} similar copy/version(s) grouped")
             ranked.append(FileMatch(source=selected[0].source, source_path=primary_path, file_family=family, score=round(best_score, 3), confidence=round(min(0.99, 0.45 + best_score * 0.5), 2), reasons=tuple(reason_set), evidence=tuple(selected), duplicate_paths=tuple(path for path, _ in members[1:])))
         ranked.sort(key=lambda match: match.score, reverse=True)
-        return ranked[:limit]
+        selected = ranked[:limit]
+        self._record_query(query, plan, selected)
+        return selected
 
 
 def route_workspace_request(query: str) -> str:
