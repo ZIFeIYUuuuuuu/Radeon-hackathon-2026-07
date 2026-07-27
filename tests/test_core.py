@@ -144,6 +144,16 @@ class ClaimCourtTests(unittest.TestCase):
         self.assertIsNone(retriever.embedding_matrix)
         self.assertIsNone(retriever.query_history[-1]["embedding_model"])
 
+    def test_championship_mode_rejects_missing_live_judge(self):
+        evidence = self.retriever.search("99.9% uptime")
+        with self.assertRaises(RuntimeError):
+            run_court(
+                "Did the vendor contractually commit to 99.9% uptime?",
+                evidence,
+                llm=None,
+                allow_fallback=False,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
