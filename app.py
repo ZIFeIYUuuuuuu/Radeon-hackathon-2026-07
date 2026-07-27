@@ -62,6 +62,11 @@ with st.sidebar:
     endpoint = st.text_input("Local runtime endpoint", default_endpoint)
     model = st.text_input("Local model", default_model)
     use_local_inference = st.toggle("Use local GPU inference", value=True)
+    championship_mode = st.toggle(
+        "Championship mode (no fallback)",
+        value=False,
+        help="When enabled, a missing local judge is an error instead of a simulated verdict.",
+    )
     st.caption("No external model provider is contacted. The selected runtime must run on this Radeon Cloud instance.")
     if st.button("Check local runtime", use_container_width=True):
         st.session_state.runtime_status = local_runtime_status(runtime, endpoint, model)
@@ -185,9 +190,14 @@ if st.button("Run private workspace request", type="primary", use_container_widt
                 llm = LocalOllama(endpoint, model) if use_local_inference else None
             else:
                 llm = LocalVLLM(endpoint, model) if use_local_inference else None
-            prosecution, defense, verdict, telemetry, mode = run_court(claim, retrieved, llm)
+            prosecution, defense, verdict, telemetry, mode = run_court(
+                claim,
+                retrieved,
+                llm,
+                allow_fallback=not championship_mode,
+            )
             st.session_state.case = {"retrieved": retrieved, "prosecution": prosecution, "defense": defense, "verdict": verdict, "telemetry": telemetry, "mode": mode}
-    except ValueError as exc:
+    except (ValueError, RuntimeError) as exc:
         st.error(str(exc))
 
 findings = st.session_state.sensitive_findings

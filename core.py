@@ -825,6 +825,7 @@ def run_court(
     claim: str,
     evidence: list[Evidence],
     llm: LocalVLLM | LocalOllama | None = None,
+    allow_fallback: bool = True,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, float], str]:
     packet = _evidence_block(evidence)
     allowed = {item.citation for item in evidence}
@@ -855,7 +856,9 @@ Return {{claim, verdict, confidence, reasoning, evidence_citations, contradictio
             "tokens_per_second": judge_stats["tokens_per_second"],
         }
         mode = getattr(llm, "label", "local vLLM")
-    except (requests.RequestException, ValueError, KeyError, json.JSONDecodeError, RuntimeError):
+    except (requests.RequestException, ValueError, KeyError, json.JSONDecodeError, RuntimeError) as exc:
+        if not allow_fallback:
+            raise RuntimeError(f"Live local judge unavailable in championship mode: {exc}") from exc
         prosecution = _fallback_role("prosecution", claim, evidence)
         defense = _fallback_role("defense", claim, evidence)
         verdict = _fallback_verdict(claim, evidence, prosecution, defense)
