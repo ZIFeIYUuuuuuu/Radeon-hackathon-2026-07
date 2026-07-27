@@ -6,6 +6,7 @@ import streamlit as st
 
 from core import (
     FileMatch,
+    LocalEmbeddingClient,
     LocalOllama,
     LocalRetriever,
     LocalVLLM,
@@ -40,7 +41,8 @@ if "intent_plan" not in st.session_state:
 
 
 def index_demo() -> None:
-    st.session_state.retriever = LocalRetriever(INDEX_FILE)
+    embedder = st.session_state.retriever.embedder
+    st.session_state.retriever = LocalRetriever(INDEX_FILE, embedder=embedder)
     count = st.session_state.retriever.index_paths(DEMO_DIR.glob("*"))
     st.session_state.indexed_count = count
     st.session_state.sensitive_findings = []
@@ -75,6 +77,28 @@ with st.sidebar:
         else:
             st.error(f"Local runtime unavailable: {status.get('error', 'unknown error')}")
     st.divider()
+    st.subheader("Semantic Retrieval")
+    use_embeddings = st.toggle("Use local semantic embeddings", value=False)
+    if use_embeddings:
+        embedding_runtime = st.selectbox("Embedding runtime", ["Ollama ROCm", "vLLM ROCm"])
+        embedding_endpoint = st.text_input(
+            "Embedding endpoint",
+            "http://localhost:11434" if embedding_runtime == "Ollama ROCm" else "http://localhost:8000/v1",
+        )
+        embedding_model = st.text_input(
+            "Embedding model",
+            "nomic-embed-text" if embedding_runtime == "Ollama ROCm" else "BAAI/bge-m3",
+        )
+        st.session_state.retriever.embedder = LocalEmbeddingClient(
+            embedding_runtime,
+            embedding_endpoint,
+            embedding_model,
+        )
+        st.caption("Embeddings are optional. If the local endpoint is unavailable, deterministic hybrid retrieval remains active.")
+    else:
+        st.session_state.retriever.embedder = None
+        st.session_state.retriever.embedding_model = ""
+    st.divider()
     st.subheader("Evidence Intake")
     workspace = st.text_input("Local workspace folder", placeholder="/workspace/private-case")
     uploads = st.file_uploader("Add private documents", type=["pdf", "docx", "pptx", "txt", "md", "eml"], accept_multiple_files=True)
@@ -88,7 +112,8 @@ with st.sidebar:
             destination = UPLOAD_DIR / upload.name
             destination.write_bytes(upload.getbuffer())
             saved.append(destination)
-        st.session_state.retriever = LocalRetriever(INDEX_FILE)
+        embedder = st.session_state.retriever.embedder
+        st.session_state.retriever = LocalRetriever(INDEX_FILE, embedder=embedder)
         st.session_state.indexed_count = st.session_state.retriever.index_paths(saved, accumulate=True)
         st.session_state.sensitive_findings = []
         st.session_state.file_matches = []
@@ -97,7 +122,8 @@ with st.sidebar:
     if st.button("Index local workspace", use_container_width=True):
         try:
             files = discover_workspace(Path(workspace).expanduser())
-            st.session_state.retriever = LocalRetriever(INDEX_FILE)
+            embedder = st.session_state.retriever.embedder
+            st.session_state.retriever = LocalRetriever(INDEX_FILE, embedder=embedder)
             st.session_state.indexed_count = st.session_state.retriever.index_paths(files, accumulate=True)
             st.session_state.sensitive_findings = []
             st.session_state.file_matches = []
@@ -119,8 +145,18 @@ with right:
     st.markdown("#### Privacy boundary")
     st.write("Retrieval, agent calls, memory, and export run locally. Export requires an explicit approval below.")
     st.write(f"Indexed chunks: **{len(st.session_state.retriever.evidence)}**")
+    if st.session_state.retriever.embedding_model:
+        st.caption(f"Semantic embeddings: {st.session_state.retriever.embedding_model}")
+    elif st.session_state.retriever.embedder:
+        st.caption("Semantic embeddings configured; they will activate on the next index.")
     if st.session_state.retriever.history:
         st.caption(f"Persistent history: {len(st.session_state.retriever.history)} version event(s)")
+    if st.session_state.retriever.query_history:
+        with st.expander(f"Query memory ({len(st.session_state.retriever.query_history)})"):
+            for item in reversed(st.session_state.retriever.query_history[-10:]):
+                st.caption(f"{item['query_id']} · {item['created_at']}")
+                st.write(item["query"])
+                st.caption(f"Intent: {item['intent']['intent']} · results: {len(item['results'])}")
 
 if st.button("Run private workspace request", type="primary", use_container_width=True):
     try:
