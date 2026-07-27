@@ -56,9 +56,11 @@ st.caption("Private local AI evidence court | documents stay on this machine")
 
 with st.sidebar:
     st.subheader("Local Inference")
-    runtime = st.selectbox("Runtime", ["Ollama ROCm", "vLLM ROCm"])
+    # The competition path is the verified Radeon Cloud vLLM service; Ollama
+    # remains available as an explicit compatibility option.
+    runtime = st.selectbox("Runtime", ["vLLM ROCm", "Ollama ROCm"])
     default_endpoint = "http://localhost:11434" if runtime == "Ollama ROCm" else "http://localhost:8000/v1"
-    default_model = "qwen3:32b-q8_0" if runtime == "Ollama ROCm" else "Qwen/Qwen3-8B"
+    default_model = "qwen3:32b-q8_0" if runtime == "Ollama ROCm" else "Qwen3-8B"
     endpoint = st.text_input("Local runtime endpoint", default_endpoint)
     model = st.text_input("Local model", default_model)
     use_local_inference = st.toggle("Use local GPU inference", value=True)
@@ -84,9 +86,9 @@ with st.sidebar:
             st.error(f"Local runtime unavailable: {status.get('error', 'unknown error')}")
     st.divider()
     st.subheader("Semantic Retrieval")
-    use_embeddings = st.toggle("Use local semantic embeddings", value=False)
+    use_embeddings = st.toggle("Use local semantic embeddings", value=True)
     if use_embeddings:
-        embedding_runtime = st.selectbox("Embedding runtime", ["Ollama ROCm", "vLLM ROCm"])
+        embedding_runtime = st.selectbox("Embedding runtime", ["vLLM ROCm", "Ollama ROCm"])
         embedding_endpoint = st.text_input(
             "Embedding endpoint",
             os.getenv(

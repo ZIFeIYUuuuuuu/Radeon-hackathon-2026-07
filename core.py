@@ -644,6 +644,9 @@ class LocalVLLM:
                 "temperature": 0.1,
                 "max_tokens": 1400,
                 "response_format": {"type": "json_object"},
+                # Qwen3's reasoning stream is useful for chat, but it can
+                # leak non-JSON thinking tokens into this contract-bound API.
+                "chat_template_kwargs": {"enable_thinking": False},
                 "stream": True,
                 "stream_options": {"include_usage": True},
                 "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
@@ -847,6 +850,11 @@ Claim: {claim}
 Evidence packet:\n{packet}
 Prosecution: {json.dumps(prosecution)}
 Defense: {json.dumps(defense)}
+Adjudication policy:
+- supported means the literal affirmative claim is established by a signed or otherwise authoritative record.
+- contradicted means an authoritative record explicitly establishes the opposite; do not use it merely because a document is silent.
+- insufficient_evidence means the record contains marketing language, planning targets, conditional statements, a missing clause, or an unresolved exception.
+For a question about a contractual uptime commitment, absence of an SLA clause and non-binding or conditional 99.9% language are insufficient_evidence unless a signed record explicitly resolves the issue. A lower or differently scoped signed SLA is a contradiction only if the documents clearly establish that it governs this exact claim.
 Return {{claim, verdict, confidence, reasoning, evidence_citations, contradictions, timeline_events, missing_evidence, recommended_next_action}}. verdict must be supported, contradicted, or insufficient_evidence."""
         verdict, judge_stats = llm.complete_json(SYSTEM_PROMPT, judge_prompt)
         telemetry = {

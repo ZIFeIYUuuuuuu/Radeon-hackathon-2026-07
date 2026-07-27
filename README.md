@@ -15,7 +15,7 @@ It is designed for **AMD AI DevMaster Hackathon 2026, Track 2**. No remote close
 - **Evidence ledger:** every rendered source and excerpt carries a local SHA-256 hash and chunk locator; approved briefs include this ledger for later verification.
 - **Secret-location tool:** deterministic local scanning finds likely private keys and credentials, but returns only a file location, category, fingerprint, and redacted preview.
 - **Runtime proof:** the UI can query the local Ollama or vLLM endpoint and display the active runtime, GPU residency, VRAM, and context facts.
-- **Specialized local router:** an optional Qwen3 8B LoRA adapter is trained locally on synthetic ClaimCourt routing, cited-verdict, and secret-redaction examples. It selects local tools; the Qwen3 32B Q8 model remains the final judge.
+- **Specialized local router:** an optional Qwen3 8B LoRA adapter is trained locally on synthetic ClaimCourt routing, cited-verdict, and secret-redaction examples. It selects local tools; the verified local Qwen3-8B vLLM service is the final judge.
 - **Unified private request:** one request routes to evidence court, file location, or a redacted sensitive-record scan without sending workspace contents outside the instance.
 - **Semantic memory finder:** vague requests such as “find the PPT I wrote about customer delay and Q4 risk” are converted into a transparent local intent plan, expanded concepts, file-type constraints, hybrid relevance scores, and human-readable match reasons.
 - **Optional local embeddings:** when a loopback Ollama /api/embed or vLLM /v1/embeddings endpoint is configured, embedding similarity is blended with lexical retrieval; an unavailable endpoint falls back without sending data elsewhere.
@@ -68,7 +68,7 @@ The live release gate additionally requires the local embedding and judge endpoi
       --embedding-endpoint http://localhost:8001/v1 \
       --embedding-model /workspace/models/bge-small-zh-v1.5 \
       --judge-endpoint http://localhost:8000/v1 \
-      --judge-model Qwen/Qwen3-8B \
+      --judge-model Qwen3-8B \
       --require-live-judge
 
 The app includes a deterministic local fallback so the complete UI and demo corpus can be reviewed before the GPU server is ready. For the competition demo, start the local ROCm service below; the court record then reports the active local runtime, judge first-token latency, and generated token throughput.
@@ -83,7 +83,7 @@ python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_
 vllm --version
 ```
 
-For the W7900-class 48 GB instance, the recommended competition configuration is `qwen3:32b-q8_0`. Its 35.1 GB Q8 weights prioritize document reasoning quality while leaving headroom for a 16K evidence context. Run it through a local ROCm Ollama server:
+For the W7900-class 48 GB instance, the verified competition configuration is Qwen3-8B in vLLM. The BF16 weights use about 15.34 GiB and leave about 20 GiB for KV cache, making the three-call court workflow stable on the Radeon instance. Ollama remains an optional compatibility runtime:
 
 ```bash
 export PATH=/workspace/ollama-runtime/bin:$PATH
@@ -114,18 +114,21 @@ On the Radeon Cloud deployment, the verified configuration uses vLLM's pooling r
 
 Use http://localhost:8001/v1 and model /workspace/models/bge-small-zh-v1.5 in ClaimCourt. The endpoint exposes /v1/embeddings and returns 512-dimensional vectors.
 
-Start the interface, select **Ollama ROCm**, and use `http://localhost:11434` with model `qwen3:32b-q8_0`. The app uses Ollama's native streaming telemetry for first-token latency and output throughput.
-
-vLLM remains a supported fallback for the preinstalled Qwen3 8B model:
+The verified vLLM judge is served with:
 
 ```bash
-vllm serve Qwen/Qwen3-8B \
+export VLLM_ATTENTION_BACKEND=TRITON_ATTN
+vllm serve /workspace/models/Qwen3-8B \
   --host 0.0.0.0 \
   --port 8000 \
   --dtype bfloat16 \
-  --gpu-memory-utilization 0.90 \
-  --max-model-len 8192
+  --gpu-memory-utilization 0.78 \
+  --max-model-len 8192 \
+  --served-model-name Qwen3-8B \
+  --enforce-eager
 ```
+
+Start the interface, select **vLLM ROCm**, and use `http://localhost:8000/v1` with model `Qwen3-8B`. The app sends `enable_thinking=false` for the court calls so the structured JSON contract is not polluted by a reasoning stream.
 
 For constrained VRAM, prefer a supported AWQ/GPTQ quantized Qwen3 checkpoint and pass its documented `--quantization` option. Measure and record first-token latency and output tokens/second on the app's court request. This is evidence for the AMD/ROCm performance scoring section.
 
