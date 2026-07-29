@@ -1,8 +1,9 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
-from core import LocalRetriever, discover_workspace, infer_intent, markdown_brief, route_workspace_request, run_court, scan_sensitive_paths
+from core import BM25Index, LocalEmbeddingClient, LocalRetriever, _document_sections, discover_workspace, infer_intent, markdown_brief, route_workspace_request, run_court, scan_sensitive_paths
 
 
 class ClaimCourtTests(unittest.TestCase):
@@ -18,6 +19,20 @@ class ClaimCourtTests(unittest.TestCase):
 
     def test_short_demo_corpus_does_not_repeat_terminal_chunks(self):
         self.assertGreaterEqual(len(self.retriever.evidence), 5)
+        self.assertTrue(all(len(item.text) <= 480 for item in self.retriever.evidence))
+
+    def test_unreadable_files_do_not_abort_directory_indexing(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            readable = root / "readable.md"
+            unreadable = root / "empty.docx"
+            readable.write_text("a readable local report", encoding="utf-8")
+            unreadable.write_bytes(b"")
+            retriever = LocalRetriever()
+            retriever.index_paths([readable, unreadable])
+        self.assertEqual(["readable.md"], [item.source for item in retriever.evidence])
+        self.assertEqual(1, len(retriever.ingestion_errors))
+        self.assertEqual("unreadable", retriever.ingestion_errors[0]["status"])
 
     def test_brief_contains_local_evidence(self):
         evidence = self.retriever.search("99.9% uptime")
@@ -65,6 +80,14 @@ class ClaimCourtTests(unittest.TestCase):
         self.assertIn("risk", plan.topics)
         self.assertIn("Q4", plan.time_hints)
         self.assertIn("slipped", plan.expanded_terms)
+
+    def test_chinese_coursework_request_gets_report_and_topic_metadata(self):
+        plan = infer_intent("找出过去一年做过的计算机组成原理课设报告")
+        self.assertEqual("locate_artifact", plan.intent)
+        self.assertIn(".doc", plan.artifact_types)
+        self.assertIn("computer_organization", plan.topics)
+        self.assertIn("coursework", plan.topics)
+        self.assertIn("past_year", plan.time_hints)
 
     def test_file_locator_groups_and_explains_semantic_matches(self):
         matches = self.retriever.locate_files("Find the presentation about customer delay and Q4 delivery risk")
@@ -130,6 +153,17 @@ class ClaimCourtTests(unittest.TestCase):
             self.assertEqual(1, len(reopened.query_history))
             self.assertEqual(matches[0].source, reopened.query_history[0]["results"][0]["source"])
 
+    def test_embedding_client_keeps_inputs_under_model_budget(self):
+        client = LocalEmbeddingClient("vLLM ROCm", "http://127.0.0.1:8001/v1", "fake", max_chars=480)
+        prepared = client._embedding_text("中" * 900)
+        self.assertLessEqual(len(prepared), 480)
+
+    def test_bm25_prioritizes_exact_chinese_phrase(self):
+        index = BM25Index(["计算机组成原理课程设计报告", "数据库课程设计报告", "无关的会议记录"])
+        scores = index.scores("计算机组成原理课设")
+        self.assertGreater(scores[0], scores[1])
+        self.assertGreater(scores[0], scores[2])
+
     def test_failed_local_embedding_endpoint_falls_back_to_hybrid_retrieval(self):
         class FailingEmbedder:
             model = "unavailable-local-embed"
@@ -143,6 +177,57 @@ class ClaimCourtTests(unittest.TestCase):
         self.assertTrue(matches)
         self.assertIsNone(retriever.embedding_matrix)
         self.assertIsNone(retriever.query_history[-1]["embedding_model"])
+
+    def test_fts5_index_is_durable_and_parent_context_is_merged(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "long-record.md"
+            source.write_text("intro " * 110 + "TARGET APPROVAL DECISION " + "follow-up " * 110, encoding="utf-8")
+            index_file = root / "workspace_index.json"
+            retriever = LocalRetriever(index_file)
+            retriever.index_paths([source])
+            self.assertTrue(retriever.fts5_active)
+            self.assertTrue(retriever.evidence[0].parent_id)
+            self.assertGreater(retriever.evidence[0].chunk_count, 1)
+            reopened = LocalRetriever(index_file)
+            results = reopened.search("TARGET APPROVAL DECISION")
+            self.assertTrue(results)
+            self.assertTrue(reopened.fts5_active)
+            self.assertTrue(any(item.context_text for item in results))
+            self.assertTrue(any("parent context merged" in reason for reason in results[0].match_reasons))
+
+    def test_local_cross_encoder_reranker_can_promote_a_candidate(self):
+        class FakeReranker:
+            model = "fake-cross-encoder"
+
+            def score(self, query, texts):
+                return [1.0 if "preferred" in text else 0.0 for text in texts]
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "ordinary.md"
+            second = root / "preferred.md"
+            first.write_text("common workspace record", encoding="utf-8")
+            second.write_text("common workspace record preferred answer", encoding="utf-8")
+            retriever = LocalRetriever(reranker=FakeReranker())
+            retriever.index_paths([first, second])
+            result = retriever.search("common workspace record", limit=1)
+            self.assertEqual("preferred.md", result[0].source)
+            self.assertEqual("fake-cross-encoder", retriever.query_history[-1]["reranker_model"])
+
+    def test_scanned_pdf_page_uses_local_ocr_hook(self):
+        from pypdf import PdfWriter
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "scan.pdf"
+            writer = PdfWriter()
+            writer.add_blank_page(width=300, height=300)
+            with path.open("wb") as stream:
+                writer.write(stream)
+            with patch("core._ocr_pdf_page", return_value="OCR extracted local text"):
+                sections = _document_sections(path)
+        self.assertEqual("page 1 (OCR)", sections[0][0])
+        self.assertIn("OCR extracted", sections[0][1])
 
     def test_championship_mode_rejects_missing_live_judge(self):
         evidence = self.retriever.search("99.9% uptime")

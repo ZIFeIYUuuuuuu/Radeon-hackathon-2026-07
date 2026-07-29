@@ -19,6 +19,18 @@ ClaimCourt 将本地合同、邮件、会议纪要、聊天记录和演示文稿
 - 真实门禁结果：23 个文件、28 个文本块、语义检索激活、敏感信息脱敏、真实三角色裁决、禁止 fallback。
 - 实测性能：法官首 token 延迟约 `0.23s`，生成速度约 `25.7 tokens/s`。
 
+## RAG 设计
+
+- 先按文档页、PPT 页、段落和句末做结构优先切分，默认约 480 字符、80 字符重叠，为 BGE 的 512-token 上限留出余量。
+- embedding 请求按批次发送，超限时自动拆批；单个文件解析失败会记录诊断并跳过，不会阻塞整个工作区。
+- 检索同时使用词法、字符 n-gram、语义向量、文件名、文件类型和时间元数据，再按文件族去重。
+- JSON 证据账本旁边维护本地 SQLite FTS5 索引；FTS5 只做可重建的检索加速层，不取代可审计的哈希账本。
+- 每个父段（文档、页或幻灯片）拆成带 `parent_id`、序号和数量的子块；召回子块后自动合并相邻父上下文，避免只返回半句话。
+- 可选加载本地 `sentence-transformers` cross-encoder，对混合召回的候选集做二阶段重排；依赖或模型不可用时保留可解释的混合检索。
+- 扫描版 PDF 页面在文字层为空时可调用本地 PyMuPDF + Tesseract OCR，引用会标记为 `page N (OCR)`；未安装 OCR 工具时只跳过该页，不阻塞整个目录。
+- 中文查询会识别课程、课设、报告、计算机组成原理和过去一年等意图，降低笔记、试卷、模板对正式报告的干扰。
+- 设计参考了 [Pinecone chunking guide](https://www.pinecone.io/learn/chunking-strategies/)、[Azure chunking guidance](https://learn.microsoft.com/en-us/azure/search/vector-search-how-to-chunk-documents)、[LlamaIndex node parsers](https://docs.llamaindex.ai/en/stable/module_guides/loading/node_parsers/modules/) 和 [Anthropic Contextual Retrieval](https://www.anthropic.com/engineering/contextual-retrieval)。
+
 ## 快速体验
 
 ```bash
@@ -147,6 +159,25 @@ On the Radeon Cloud deployment, the verified configuration uses vLLM's pooling r
     vllm serve /workspace/models/bge-small-zh-v1.5 --runner pooling --host 0.0.0.0 --port 8001 --dtype bfloat16 --gpu-memory-utilization 0.12 --max-model-len 512
 
 Use http://localhost:8001/v1 and model /workspace/models/bge-small-zh-v1.5 in ClaimCourt. The endpoint exposes /v1/embeddings and returns 512-dimensional vectors.
+
+ClaimCourt also maintains a durable SQLite FTS5 index beside the JSON ledger. The
+index is rebuilt from the hashed evidence after every ingestion, so it can be
+deleted and regenerated without losing the audit history. Retrieval first uses
+hybrid lexical/embedding scores, then optionally reranks a shortlist with a local
+`sentence-transformers` cross-encoder. To enable that path, install the optional
+package and point the UI at a model already present in the private model cache:
+
+```bash
+python -m pip install sentence-transformers
+# optional, for scanned PDFs:
+python -m pip install pymupdf pytesseract pillow
+# the tesseract executable and the selected language packs must also be local
+```
+
+Every retrieved child chunk carries its structural parent and neighboring context
+in the evidence packet. This keeps citations anchored to a small chunk while
+giving the judge enough surrounding text to distinguish an exception clause from
+the sentence immediately before it.
 
 The verified vLLM judge is served with:
 

@@ -62,6 +62,12 @@ def main() -> int:
         "indexed_chunks": chunks,
         "embedding_model": retriever.embedding_model or None,
         "embedding_active": retriever.embedding_matrix is not None,
+        "fts5_active": retriever.fts5_active,
+        "parent_child": {
+            "parent_count": len(retriever.parent_records),
+            "child_chunks": sum(1 for item in retriever.evidence if item.parent_id),
+            "ocr_chunks": sum(1 for item in retriever.evidence if item.ocr_used),
+        },
         "memory_finder": {
             "source": memory_matches[0].source,
             "score": memory_matches[0].score,

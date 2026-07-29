@@ -8,6 +8,7 @@ import streamlit as st
 from core import (
     FileMatch,
     LocalEmbeddingClient,
+    LocalCrossEncoderReranker,
     LocalOllama,
     LocalRetriever,
     LocalVLLM,
@@ -112,10 +113,27 @@ with st.sidebar:
     else:
         st.session_state.retriever.embedder = None
         st.session_state.retriever.embedding_model = ""
+    use_reranker = st.toggle("Use local cross-encoder reranker", value=False)
+    if use_reranker:
+        reranker_model = st.text_input(
+            "Cross-encoder model path",
+            os.getenv("CLAIMCOURT_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3"),
+            help="Load a model from the local cache or a private model directory. No remote API is used.",
+        )
+        if reranker_model.strip():
+            st.session_state.retriever.reranker = LocalCrossEncoderReranker(reranker_model.strip())
+            st.caption("Reranking is lazy-loaded after the first query; missing optional dependencies fall back to hybrid retrieval.")
+    else:
+        st.session_state.retriever.reranker = None
+        st.session_state.retriever.reranker_model = ""
+    if st.session_state.retriever.fts5_active:
+        st.caption("SQLite FTS5 durable lexical index active")
+    elif st.session_state.retriever.fts_error:
+        st.warning(f"FTS5 unavailable; using in-memory lexical retrieval: {st.session_state.retriever.fts_error}")
     st.divider()
     st.subheader("Evidence Intake")
     workspace = st.text_input("Local workspace folder", placeholder="/workspace/private-case")
-    uploads = st.file_uploader("Add private documents", type=["pdf", "docx", "pptx", "txt", "md", "eml"], accept_multiple_files=True)
+    uploads = st.file_uploader("Add private documents", type=["pdf", "doc", "docx", "pptx", "txt", "md", "eml"], accept_multiple_files=True)
     if st.button("Load stable demo case", use_container_width=True):
         index_demo()
         st.success(f"Indexed {st.session_state.indexed_count} local evidence chunks.")
@@ -147,6 +165,10 @@ with st.sidebar:
             st.error(str(exc))
     if st.button("Scan indexed files for sensitive records", use_container_width=True, disabled=not st.session_state.retriever.evidence):
         st.session_state.sensitive_findings = st.session_state.retriever.scan_sensitive_records()
+    if st.session_state.retriever.ingestion_errors:
+        st.warning(f"Skipped {len(st.session_state.retriever.ingestion_errors)} unreadable file(s); the remaining files were indexed.")
+        with st.expander("Inspect ingestion diagnostics"):
+            st.dataframe(st.session_state.retriever.ingestion_errors[-50:], use_container_width=True, hide_index=True)
 
 left, right = st.columns([1.2, 1])
 with left:
@@ -159,6 +181,9 @@ with right:
     st.markdown("#### Privacy boundary")
     st.write("Retrieval, agent calls, memory, and export run locally. Export requires an explicit approval below.")
     st.write(f"Indexed chunks: **{len(st.session_state.retriever.evidence)}**")
+    ocr_chunks = sum(1 for item in st.session_state.retriever.evidence if item.ocr_used)
+    if ocr_chunks:
+        st.caption(f"OCR-derived chunks: {ocr_chunks}")
     if st.session_state.retriever.embedding_model:
         st.caption(f"Semantic embeddings: {st.session_state.retriever.embedding_model}")
     elif st.session_state.retriever.embedder:
@@ -170,7 +195,11 @@ with right:
             for item in reversed(st.session_state.retriever.query_history[-10:]):
                 st.caption(f"{item['query_id']} · {item['created_at']}")
                 st.write(item["query"])
-                st.caption(f"Intent: {item['intent']['intent']} · results: {len(item['results'])}")
+                st.caption(
+                    f"Intent: {item['intent']['intent']} · results: {len(item['results'])} · "
+                    f"FTS5: {'on' if item.get('fts5_active') else 'off'} · "
+                    f"Reranker: {item.get('reranker_model') or 'off'}"
+                )
 
 if st.button("Run private workspace request", type="primary", use_container_width=True):
     try:

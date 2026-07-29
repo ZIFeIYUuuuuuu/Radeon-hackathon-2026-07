@@ -4,7 +4,7 @@
 ```text
 Trusted local documents
   -> parser and chunker
-  -> local in-memory retrieval with citation IDs
+  -> durable JSON evidence ledger + SQLite FTS5, hybrid child retrieval and parent context
   -> controlled evidence packet
   -> prosecution -> defense -> judge (one local vLLM model)
   -> citation validation, timeline, and verdict rendering
@@ -14,7 +14,7 @@ Trusted local documents
 ## Tech Stack
 - Frontend: Streamlit.
 - Backend: Python 3.10+, requests, structured JSON workflow.
-- Data: In-memory TF-IDF retrieval; source files remain local to the deployment boundary.
+- Data: JSON evidence ledger with source hashes, adjacent SQLite FTS5 acceleration, in-memory TF-IDF/BM25/embedding matrices; source files remain local to the deployment boundary.
 - Inference: OpenAI-compatible local vLLM endpoint on AMD Radeon GPU + ROCm; Qwen3-8B is the primary target.
 - Infrastructure: Radeon Cloud `ROCm vLLM-dev (Navi)` image; SSH tunnel is the reliable private browser access path when cloud web routing fails.
 
@@ -35,7 +35,7 @@ streamlit run app.py --server.address 127.0.0.1 --server.port 8502
 ```
 
 ## Data Model
-- `Evidence`: citation, source, text, relevance score, optional date.
+- `Evidence`: citation, source, text, relevance score, optional date, structural parent ID, child position, and optional merged parent context.
 - `Case`: user claim, retrieved packet, role outputs, verdict, telemetry, and export approval state.
 - `Verdict`: supported, contradicted, or insufficient_evidence; confidence; reasoning; citations; contradictions; timeline; missing evidence; recommended action.
 
@@ -52,4 +52,5 @@ streamlit run app.py --server.address 127.0.0.1 --server.port 8502
 - Auth/security: Require a trusted private deployment; do not expose the UI publicly with real evidence.
 - Data safety: Parse/index in process; only export after explicit approval; reject citations absent from the packet.
 - Cost/latency: Capture first-token latency and judge output tokens/s; preserve model cache; avoid instance restarts.
+- Optional quality layers: local cross-encoder reranking and PyMuPDF/Tesseract OCR are lazy and fail closed to the deterministic hybrid index.
 - Rollback: Source and demo corpus live in Git; archive before cloud changes; stop only app processes, never destroy a working instance without preserving evidence.
