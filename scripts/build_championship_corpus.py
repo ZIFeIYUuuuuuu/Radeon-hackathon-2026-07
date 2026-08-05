@@ -114,11 +114,9 @@ def build(root: Path) -> None:
 
     write(root / "05_migration/Migration_Notes.md", """
     # Private migration notes - 2026-05-22
-    The temporary staging key is recorded below for the migration owner to rotate. ClaimCourt must
-    never display or export this value; only its location and fingerprint may be shown.
-    -----BEGIN PRIVATE KEY-----
-    FAKE_DEMO_KEY_MATERIAL_DO_NOT_USE
-    -----END PRIVATE KEY-----
+    A synthetic credential fixture is recorded below for the migration owner to rotate. ClaimCourt
+    must never display or export this value; only its location and fingerprint may be shown.
+    password: DEMO_ONLY_NOT_A_REAL_SECRET
     """)
     write(root / "05_migration/Migration_Runbook.md", """
     # Migration runbook

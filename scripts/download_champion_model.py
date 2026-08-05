@@ -10,8 +10,8 @@ from huggingface_hub import snapshot_download
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="Qwen/Qwen3-8B")
-    parser.add_argument("--output", type=Path, default=Path("models/Qwen3-8B"))
+    parser.add_argument("--model", default="Qwen/Qwen3-14B")
+    parser.add_argument("--output", type=Path, default=Path("models/Qwen3-14B"))
     args = parser.parse_args()
     snapshot_download(
         repo_id=args.model,

@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core import LocalEmbeddingClient, LocalRetriever, LocalVLLM, discover_workspace, run_court
+from scripts.fuzzy_retrieval_check import run as run_fuzzy_benchmark
 
 
 def main() -> int:
@@ -37,8 +38,12 @@ def main() -> int:
         raise AssertionError("Memory Finder did not rank the final presentation first.")
 
     findings = retriever.scan_sensitive_records()
-    if not findings or any("FAKE_DEMO_KEY_MATERIAL" in item.redacted_preview for item in findings):
+    if not findings or any("DEMO_ONLY_NOT_A_REAL_SECRET" in item.redacted_preview for item in findings):
         raise AssertionError("Sensitive locator did not return a redacted finding.")
+
+    fuzzy_benchmark = run_fuzzy_benchmark(args.corpus)
+    if fuzzy_benchmark["top1_accuracy"] < 0.9 or fuzzy_benchmark["recall_at_3"] < 0.9:
+        raise AssertionError("Fuzzy intent retrieval benchmark fell below the championship gate.")
 
     evidence = retriever.search("Did the vendor contractually commit to 99.9% uptime?", limit=8)
     court_mode = "not_run"
@@ -63,6 +68,7 @@ def main() -> int:
         "embedding_model": retriever.embedding_model or None,
         "embedding_active": retriever.embedding_matrix is not None,
         "fts5_active": retriever.fts5_active,
+        "fts5_durable": retriever.fts5_durable,
         "parent_child": {
             "parent_count": len(retriever.parent_records),
             "child_chunks": sum(1 for item in retriever.evidence if item.parent_id),
@@ -77,7 +83,16 @@ def main() -> int:
         },
         "sensitive_locator": {
             "count": len(findings),
-            "redacted": all("FAKE_DEMO_KEY_MATERIAL" not in item.redacted_preview for item in findings),
+            "redacted": all("DEMO_ONLY_NOT_A_REAL_SECRET" not in item.redacted_preview for item in findings),
+        },
+        "fuzzy_intent_benchmark": {
+            "cases": fuzzy_benchmark["cases"],
+            "top1_accuracy": fuzzy_benchmark["top1_accuracy"],
+            "recall_at_3": fuzzy_benchmark["recall_at_3"],
+            "lexical_baseline_top1_accuracy": fuzzy_benchmark["lexical_baseline_top1_accuracy"],
+            "lexical_baseline_recall_at_3": fuzzy_benchmark["lexical_baseline_recall_at_3"],
+            "compiler_modes": fuzzy_benchmark["compiler_modes"],
+            "compiler_failures": fuzzy_benchmark["compiler_failures"],
         },
         "court": {"mode": court_mode, "verdict": verdict, "telemetry": telemetry},
     }

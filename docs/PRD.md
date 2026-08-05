@@ -8,9 +8,25 @@
 
 **North-star outcome:** Win Track 2 by making the strongest possible case that private AI agents can be useful, trustworthy, performant, and locally deployable on AMD Radeon GPU + ROCm.
 
-**One-sentence pitch:** ClaimCourt turns private documents into cited verdicts, contradiction timelines, and approval-gated decision briefs using a local AMD GPU model.
+**One-sentence pitch:** ClaimCourt compiles fuzzy human recollections into private, cited evidence using a local AMD GPU model, then turns disputed claims into verdicts, timelines, and approval-gated briefs.
 
 **Ten-second demo test:** A viewer should immediately understand: "Instead of asking a black-box chatbot what a contract says, I can put my private evidence on trial and inspect the reasoning."
+
+### Product commitment: this is not a demo product
+
+The synthetic SLA corpus is a regression fixture and a competition presentation aid. It is not the product boundary. The product boundary is a long-lived private workspace chosen by the user, containing changing, duplicated, partially unreadable, multilingual, and potentially sensitive files.
+
+A feature is not complete merely because it succeeds on `demo_corpus` or `championship_corpus`. A production claim requires all of the following:
+
+1. The same path works on an explicitly selected real directory without copying its contents into the repository.
+2. Scope, exclusions, parser failures, skipped files, and stale index state are visible to the user.
+3. Re-indexing is incremental and preserves provenance without silently mixing unrelated workspaces.
+4. Low-confidence retrieval asks for clarification instead of guessing.
+5. Local model, embedding, OCR, and reranker failures degrade explicitly and never become fabricated answers.
+6. Private data has a documented storage, deletion, retention, and recovery model.
+7. Quality is measured on a growing adversarial evaluation set; fixed synthetic success alone is insufficient.
+
+Current maturity is **private alpha**. The retrieval and evidence workflow are real implementations, but encryption at rest, authenticated multi-user operation, background synchronization, workspace isolation, and L4 owner dogfood remain release gates before production readiness may be claimed.
 
 ## 2. Problem
 
@@ -67,7 +83,7 @@ An operations, procurement, customer-success, legal-operations, or compliance le
 - Legal advice or legally binding verdicts.
 - Background autonomous actions, document sharing, or external email sending.
 - Public hosted knowledge base behavior.
-- Fine-tuning, model training, or real multi-model collaboration.
+- Training on private workspace documents or modifying the judge's base model weights. A small optional query-only LoRA trained on synthetic intent plans is allowed.
 - Any closed remote LLM API as a core function.
 
 ## 6. Final Product Shape
@@ -113,6 +129,9 @@ The final submission opens directly into the **Case Room**, not a marketing land
 - The UI must show confidence and allow the user to inspect the search plan instead of presenting an opaque nearest-neighbor result.
 - If a local Ollama or vLLM embedding endpoint is configured, embedding similarity is blended with lexical retrieval; endpoint failure must fall back to deterministic local retrieval.
 - Query plans and result identities are persisted locally so a case owner can inspect or replay prior searches without re-uploading evidence.
+- An optional local Qwen/LoRA intent compiler receives the query only and returns the same strict `IntentPlan` schema as the deterministic compiler.
+- The compiler extracts causal/temporal relations such as "after the customer delay", memory signals such as "I vaguely remember", and a clarification state for under-specified requests.
+- A release benchmark compares intent-aware retrieval with raw BM25 on synthetic hard negatives; benchmark regressions block the championship acceptance run.
 
 ### FR-1: Evidence intake
 
@@ -157,6 +176,7 @@ The final submission opens directly into the **Case Room**, not a marketing land
 - Deterministic fallback may be enabled only for the synthetic demo and must be visibly labeled `demo fallback`, never `local vLLM`.
 - When model artifact download is blocked, report the actual network/model state and offer offline artifact upload instructions.
 - The product must continue to display already retrieved evidence and allow no-model inspection.
+- Intent compiler failure falls back to the deterministic plan with a visible error and compiler mode; it never prevents evidence inspection or silently claims learned semantic understanding.
 
 ### FR-7: Export
 
@@ -168,7 +188,7 @@ The final submission opens directly into the **Case Room**, not a marketing land
 
 ### Local model path
 
-- Primary model: Qwen3-8B or a compatible Qwen3-class instruction model.
+- Primary model: verified Qwen3-14B BF16 on Radeon PRO W7900, with a synthetic query-only LoRA adapter for intent compilation.
 - Server: local vLLM OpenAI-compatible endpoint at `http://127.0.0.1:8000/v1`.
 - Target Radeon Cloud image: `ROCm vLLM-dev (Navi)`.
 - Dtype: BF16 on Radeon Pro W7900-class VRAM; supported AWQ/GPTQ only if needed and measured.
@@ -304,6 +324,8 @@ Required recorded proof for this journey: embedding endpoint health and model ID
 
 ## 14. Release Decision
 
-- **Current mode:** dogfood with synthetic documents only.
+- **Current mode:** private alpha. Synthetic corpora are regression fixtures; the intended product path is an explicitly selected local workspace.
+- **Gate to owner dogfood:** safe directory scanning with diagnostics, isolated workspace identity, repeatable incremental sync, deletion/retention controls, and a real-directory retrieval evaluation approved by the owner.
+- **Gate to private beta:** encryption-at-rest/key-management decision, authentication and concurrency model, installer/recovery path, and sustained evaluation on non-fixture corpora.
 - **Gate to video recording:** GPU-backed vLLM response, court workflow, approval export, and metrics all verified in the same stable session.
 - **Rollback:** fall back to the stable synthetic deterministic demo only for UI rehearsal; do not represent it as GPU inference.

@@ -4,21 +4,22 @@ This directory builds the `claimcourt-router:8b` adapter. It is not a legal mode
 
 ## Data
 
-`generate_claimcourt_sft.py` emits 162 synthetic examples. They cover:
+`generate_claimcourt_sft.py` emits 172 synthetic examples. They cover:
 
 - evidence verdict JSON with citation constraints;
 - routing to `evidence_court`, `file_locator`, or `sensitive_record_scan`;
 - credential findings that contain only a location, fingerprint, and redacted preview.
+- fuzzy memory queries that map incomplete recollections to topics, file types, time hints, event relations, and clarification states.
 
-The generator contains no real private documents or credentials.
+The generator contains no real private documents or credentials. It also writes `training/data/claimcourt_intent_sft.jsonl`, a 64-example query-only dataset whose JSON contract exactly matches the runtime compiler. Use that focused file for the router adapter; private workspace text is never used as SFT data.
 
 ## Train On Radeon Cloud
 
 ```bash
 python training/generate_claimcourt_sft.py
 python training/train_lora.py \
-  --model /workspace/models/Qwen3-8B \
-  --data training/data/claimcourt_sft.jsonl \
+  --model /workspace/models/Qwen3-14B \
+  --data training/data/claimcourt_intent_sft.jsonl \
   --output /workspace/claimcourt-models/claimcourt-qwen3-8b-lora
 ```
 
