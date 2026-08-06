@@ -288,6 +288,26 @@ def _active_index_counts() -> tuple[int, int]:
     return len({item.source_path for item in active}), len(active)
 
 
+def _can_accumulate_workspace(workspace: str) -> bool:
+    """Accumulate only when the loaded evidence is isolated to this workspace."""
+    if not STATE.workspace_root:
+        return False
+    root = Path(workspace).expanduser().resolve()
+    try:
+        if Path(STATE.workspace_root).expanduser().resolve() != root:
+            return False
+    except OSError:
+        return False
+    for item in STATE.retriever.evidence:
+        if not item.source_path:
+            return False
+        try:
+            Path(item.source_path).expanduser().resolve().relative_to(root)
+        except (OSError, ValueError):
+            return False
+    return True
+
+
 def _persist_active_workspace() -> None:
     temporary = ACTIVE_WORKSPACE_FILE.with_suffix(".json.tmp")
     temporary.write_text(json.dumps({"workspace": STATE.workspace_root}), encoding="utf-8")
@@ -311,7 +331,9 @@ def _index_request(payload: dict[str, Any]) -> dict[str, Any]:
             # directory.  They are stored in the private data directory first,
             # then scanned again below so diagnostics describe the files that
             # were actually indexed.
-            STATE.workspace_root = str(UPLOAD_DIR.resolve())
+            upload_root = str(UPLOAD_DIR.resolve())
+            accumulate_uploads = _can_accumulate_workspace(upload_root)
+            STATE.workspace_root = upload_root
             scan = scan_workspace(UPLOAD_DIR)
             count = 0
         else:
@@ -319,8 +341,9 @@ def _index_request(payload: dict[str, Any]) -> dict[str, Any]:
             if not workspace:
                 raise ValueError("Select a local workspace folder before indexing")
             scan = scan_workspace(Path(workspace))
+            accumulate_workspace = _can_accumulate_workspace(scan.root)
             STATE.workspace_root = scan.root
-            count = STATE.retriever.index_paths(scan.files, accumulate=True)
+            count = STATE.retriever.index_paths(scan.files, accumulate=accumulate_workspace)
         uploaded: list[str] = []
         for item in payload.get("files", []) or []:
             if not isinstance(item, dict):
@@ -340,7 +363,10 @@ def _index_request(payload: dict[str, Any]) -> dict[str, Any]:
                 pass
             uploaded.append(str(destination))
         if uploaded:
-            count = STATE.retriever.index_paths([Path(item) for item in uploaded], accumulate=True)
+            count = STATE.retriever.index_paths(
+                [Path(item) for item in uploaded],
+                accumulate=accumulate_uploads if source == "uploads" else False,
+            )
             if source == "uploads":
                 scan = scan_workspace(UPLOAD_DIR)
         STATE.last_scan = _scan_metadata(scan) if source != "demo" else _scan_metadata(scan)
@@ -529,6 +555,13 @@ def _investigate(payload: dict[str, Any]) -> dict[str, Any]:
             status=status,
             error=error,
             courtroom=courtroom,
+            runtime={
+                **_runtime_payload(),
+                "tokens_per_second": court_telemetry.get("tokens_per_second", 0),
+                "first_token_latency_seconds": court_telemetry.get("first_token_latency_seconds", 0),
+                "end_to_end_latency_seconds": court_telemetry.get("latency_seconds", 0),
+                "completion_tokens": court_telemetry.get("completion_tokens", 0),
+            },
             telemetry={"intent": intent_telemetry, "court": court_telemetry, "mode": mode},
         )
         if status == "court_ready":

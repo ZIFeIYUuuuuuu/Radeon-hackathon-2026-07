@@ -1,16 +1,14 @@
 {
   "schema": 1,
-  "ready_except_video": true,
-  "ready_for_pr": false,
+  "ready_except_video": false,
+  "ready_for_pr": true,
   "failures": [],
-  "warnings": [
-    "demo_video_url_missing"
-  ],
+  "warnings": [],
   "checks": {
     "required_files": {
       "README.md": {
         "exists": true,
-        "bytes": 15811,
+        "bytes": 15765,
         "passed": true
       },
       "requirements.txt": {
@@ -45,7 +43,7 @@
       },
       "submission/PR_BODY.md": {
         "exists": true,
-        "bytes": 1901,
+        "bytes": 1882,
         "passed": true
       },
       "docs/evidence/radeon-championship-live-20260805.json": {
@@ -115,8 +113,8 @@
       "passed": true
     },
     "demo_video": {
-      "public_url_present": false,
-      "passed": false
+      "public_url_present": true,
+      "passed": true
     }
   }
 }

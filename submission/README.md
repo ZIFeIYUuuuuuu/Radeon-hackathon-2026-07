@@ -11,4 +11,6 @@ This directory contains the English competition deliverables for Team Zi Fei Yu.
 - `SUBMISSION_CHECKLIST.md`: final release gate.
 - `assets/claimcourt-ui.png`: locally rendered English product interface.
 
+Demo video: https://youtu.be/Do_LJsUSFnQ
+
 The demo video URL must be added to `PR_BODY.md` before the official Pull Request is opened.

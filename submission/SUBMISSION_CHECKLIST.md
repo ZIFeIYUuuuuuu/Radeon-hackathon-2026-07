@@ -15,8 +15,8 @@
 - [x] Final project-description PDF generated and visually checked
 - [x] Final PPT generated and visually checked
 - [x] English 3-5 minute demo script
-- [ ] Demo video recorded and uploaded
-- [ ] Public video URL added to `submission/PR_BODY.md`
+- [x] Demo video recorded and uploaded: https://youtu.be/Do_LJsUSFnQ
+- [x] Public video URL added to `submission/PR_BODY.md`
 
 ## Technical Verification
 

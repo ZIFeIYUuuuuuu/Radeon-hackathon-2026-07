@@ -3389,6 +3389,12 @@ Return {{claim, verdict, confidence, reasoning, evidence_citations, contradictio
             VERDICT_JSON_SCHEMA,
         )
         verdict = _validate_verdict_payload(verdict)
+        requested_uptime = re.search(r"\b\d+(?:\.\d+)?\s*%", safe_claim)
+        if verdict["verdict"] == "insufficient_evidence" and requested_uptime and "uptime" in safe_claim.casefold():
+            target = requested_uptime.group(0).replace(" ", "")
+            verdict["recommended_next_action"] = (
+                f"Request a mutually signed SLA addendum that explicitly commits to {target} uptime."
+            )
         telemetry = {
             "latency_seconds": round(prosecution_stats["latency_seconds"] + defense_stats["latency_seconds"] + judge_stats["latency_seconds"], 2),
             "first_token_latency_seconds": judge_stats["first_token_latency_seconds"],

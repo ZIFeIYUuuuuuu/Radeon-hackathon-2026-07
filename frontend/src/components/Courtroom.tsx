@@ -150,7 +150,7 @@ export const Courtroom: React.FC<CourtroomProps> = ({
             disabled={!canExport}
             className="bg-amber-500 hover:bg-amber-400 text-gray-950 font-bold px-3 py-1.5 rounded transition-colors text-xs disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            [ {t.exportReport} ]
+            {t.exportBundle}
           </button>
         </div>
       </div>

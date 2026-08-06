@@ -36,7 +36,7 @@ The verified stack runs on an AMD Radeon PRO W7900-class GPU with ROCm. Qwen3-14
 - Project description: `submission/ClaimCourt_Project_Description.pdf`
 - Presentation: `submission/ClaimCourt_Presentation.pptx`
 - Demo script: `submission/DEMO_SCRIPT.md`
-- Demo video: **TBD - add final public video URL before opening the PR**
+- Demo video: [YouTube](https://youtu.be/Do_LJsUSFnQ)
 - Source and setup: `README.md`
 
 ## Privacy Statement

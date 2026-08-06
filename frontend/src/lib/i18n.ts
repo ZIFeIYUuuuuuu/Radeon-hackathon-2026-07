@@ -71,7 +71,7 @@ export const translations = {
 
     // EvidenceRoom
     evidenceAndSourceViewer: "证据室与原文阅读器",
-    indexedSources: "个本地索引源",
+    indexedSources: "条已检索证据片段",
     integrityAllVerified: "SHA-256 完整性：以逐条证据状态为准",
     selectedFilePreview: "本地文件内容预览",
     citationsAttached: "已关联裁判引用",
@@ -194,7 +194,7 @@ export const translations = {
 
     // EvidenceRoom
     evidenceAndSourceViewer: "EVIDENCE ROOM & SOURCE VIEWER",
-    indexedSources: "LOCALLY INDEXED SOURCES",
+    indexedSources: "RETRIEVED EVIDENCE EXCERPTS",
     integrityAllVerified: "SHA-256 INTEGRITY: PER-EVIDENCE STATUS",
     selectedFilePreview: "LOCAL FILE CONTENT PREVIEW",
     citationsAttached: "CITATIONS ATTACHED",

@@ -42,13 +42,16 @@ export const CaseDesk: React.FC<CaseDeskProps> = ({
   const t = translations[lang];
   const runtime = caseData.runtime;
   const runtimeLabel = runtime?.available
-    ? (runtime.modelResident.includes("(not loaded)") ? "LOCAL RUNTIME REACHABLE" : "LOCAL RUNTIME READY")
+    ? (String(runtime.modelResident || "").includes("(not loaded)") ? "LOCAL RUNTIME REACHABLE" : "LOCAL RUNTIME READY")
     : "LOCAL RUNTIME UNAVAILABLE";
   const runtimeDetail = [runtime?.rocmVersion, runtime?.gpuModel]
     .filter((value) => value && value !== "unknown")
     .join(" • ") || "ROCm / GPU telemetry unavailable";
   const externalCallLabel = `${runtime?.externalCalls ?? 0} external calls • local API boundary`;
   const firstEvidence = caseData.evidenceList[0];
+  const evidenceSourceCount = new Set(
+    caseData.evidenceList.map((item) => item.sourcePath || item.filename),
+  ).size;
   const visibleFileMatches = caseData.retrievalDecision?.status === "multiple_matches"
     ? (caseData.fileMatches || []).slice(0, 24)
     : (caseData.fileMatches || []).slice(0, 3);
@@ -340,7 +343,7 @@ export const CaseDesk: React.FC<CaseDeskProps> = ({
             <span className={`px-1.5 py-0.5 rounded text-[10px] border ${
               theme === 'dark' ? "bg-cyan-950 text-cyan-400 border-cyan-800" : "bg-cyan-100 text-cyan-800 border-cyan-300"
             }`}>
-              {caseData.evidenceList.length} sources
+              {evidenceSourceCount} {evidenceSourceCount === 1 ? "source" : "sources"}
             </span>
           </div>
           <div className={`text-sm font-semibold line-clamp-1 font-mono ${

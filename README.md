@@ -38,7 +38,7 @@ The machine-readable receipts are available in [`docs/evidence/radeon-championsh
 - [Presentation deck](submission/ClaimCourt_Presentation.pptx)
 - [Presentation PDF preview](submission/ClaimCourt_Presentation.pdf)
 - [Demo recording script](submission/DEMO_SCRIPT.md)
-- Demo video: **TBD - the public video URL will be added before the official Pull Request is opened**
+- [Demo video on YouTube](https://youtu.be/Do_LJsUSFnQ)
 
 ## What it demonstrates
 

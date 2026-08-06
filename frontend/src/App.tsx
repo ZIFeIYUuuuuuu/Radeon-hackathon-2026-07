@@ -61,6 +61,44 @@ const EMPTY_CASE: CaseData = {
 
 type ApiEnvelope<T> = { success: boolean; data?: T; error?: string };
 
+function normalizeCaseData(value: Partial<CaseData>, previous: CaseData = EMPTY_CASE): CaseData {
+  const intent = value.intent;
+  const courtroom = value.courtroom;
+  const evidenceList = Array.isArray(value.evidenceList) ? value.evidenceList : [];
+  const fileMatches = Array.isArray(value.fileMatches)
+    ? value.fileMatches.map((match) => ({
+        ...match,
+        reasons: Array.isArray(match.reasons) ? match.reasons : [],
+        duplicatePaths: Array.isArray(match.duplicatePaths) ? match.duplicatePaths : [],
+        evidenceIds: Array.isArray(match.evidenceIds) ? match.evidenceIds : [],
+      }))
+    : [];
+
+  return {
+    ...EMPTY_CASE,
+    ...previous,
+    ...value,
+    intent: {
+      ...EMPTY_CASE.intent,
+      ...intent,
+      topics: Array.isArray(intent?.topics) ? intent.topics : [],
+      trajectory: Array.isArray(intent?.trajectory) ? intent.trajectory : [],
+    },
+    evidenceList,
+    courtroom: {
+      ...EMPTY_CASE.courtroom,
+      ...courtroom,
+      prosecution: Array.isArray(courtroom?.prosecution) ? courtroom.prosecution : [],
+      defense: Array.isArray(courtroom?.defense) ? courtroom.defense : [],
+      citedEvidence: Array.isArray(courtroom?.citedEvidence) ? courtroom.citedEvidence : [],
+      timeline: Array.isArray(courtroom?.timeline) ? courtroom.timeline : [],
+      missingEvidence: Array.isArray(courtroom?.missingEvidence) ? courtroom.missingEvidence : [],
+    },
+    fileMatches,
+    securityRecords: Array.isArray(value.securityRecords) ? value.securityRecords : [],
+  };
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -77,17 +115,18 @@ function runtimeFromApi(value: Record<string, any> | undefined): RuntimeStats {
   if (!value) return EMPTY_RUNTIME;
   const vramUsed = Number(value.vram_used_bytes || value.size_vram || 0) / (1024 ** 3);
   const vramTotal = Number(value.vram_total_bytes || 0) / (1024 ** 3);
-  const configuredModel = String(value.model || "unknown");
+  const configuredModel = String(value.model || value.modelResident || "unknown");
   return {
     ...EMPTY_RUNTIME,
-    gpuModel: value.gpu_name || "unknown",
-    rocmVersion: value.rocm_version || "unknown",
+    gpuModel: value.gpu_name || value.gpuModel || "unknown",
+    rocmVersion: value.rocm_version || value.rocmVersion || "unknown",
     hipStatus: value.hip_version ? `HIP ${value.hip_version}` : value.available ? "Runtime reachable" : "Runtime unavailable",
-    modelResident: value.model_loaded ? configuredModel : `${configuredModel} (not loaded)`,
-    precision: value.dtype || "unknown",
+    modelResident: value.modelResident || (value.model_loaded === false ? `${configuredModel} (not loaded)` : configuredModel),
+    precision: value.dtype || value.precision || "unknown",
     vramUsed: Number(vramUsed.toFixed(2)),
     vramTotal: Number(vramTotal.toFixed(2)),
-    externalCalls: Number(value.external_calls || 0),
+    tokenSpeed: Number(value.tokens_per_second ?? value.tokenSpeed ?? 0),
+    externalCalls: Number(value.external_calls ?? value.externalCalls ?? 0),
     available: Boolean(value.available),
     error: value.error,
     service: value.service,
@@ -230,14 +269,18 @@ export default function App() {
         method: "POST",
         body: JSON.stringify({ query, useLocalModel: true }),
       });
-      setCaseData((previous) => ({
+      const normalizedRuntime = data.runtime
+        ? runtimeFromApi(data.runtime as unknown as Record<string, any>)
+        : runtimeStats;
+      setCaseData((previous) => normalizeCaseData({
         ...data,
         workspace: data.workspace || previous.workspace,
         indexedSources: data.indexedSources ?? previous.indexedSources ?? 0,
         indexedChunks: data.indexedChunks ?? previous.indexedChunks ?? 0,
         scan: data.scan ?? previous.scan,
-      }));
-      setRuntimeStats(data.runtime || runtimeStats);
+        runtime: normalizedRuntime,
+      }, previous));
+      setRuntimeStats(normalizedRuntime);
       setSecurityRecords(data.securityRecords || []);
       setSelectedEvidenceId(data.evidenceList[0]?.id || "");
       setActiveView(data.route === "sensitive_record_scan" ? "security" : "desk");
